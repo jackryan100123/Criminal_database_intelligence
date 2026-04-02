@@ -21,6 +21,8 @@ docker-compose up -d --build
 Frontend UI: `http://localhost:5173`  
 Backend health: `http://localhost:8000/health`
 
+Note: the frontend container proxies API calls to the backend, so the browser should not hit CORS issues.
+
 ## Backend
 ```bash
 cd backend

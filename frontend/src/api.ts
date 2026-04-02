@@ -1,6 +1,8 @@
 type Json = any;
 
-const API_URL = (import.meta as any).env?.VITE_API_URL ?? "http://localhost:8000";
+// In Docker we proxy API requests through the same nginx origin,
+// so the correct default is a relative URL prefix (empty string).
+const API_URL = (import.meta as any).env?.VITE_API_URL ?? "";
 
 function getToken(): string | null {
   return localStorage.getItem("token");

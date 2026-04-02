@@ -11,6 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdb_user -d cdb_intel"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.0
@@ -30,8 +35,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - elasticsearch
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
     environment:
       # Keep auth consistent across runs
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me}
@@ -53,8 +60,7 @@ services:
     build:
       context: ./frontend
       args:
-        # Browser needs host-reachable URL; in your local setup the backend is at :8000.
-        VITE_API_URL: "http://localhost:8000"
+        VITE_API_URL: ""
     ports:
       - "5173:80"
     depends_on:

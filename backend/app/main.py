@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Optional
+import time
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -92,10 +93,22 @@ def get_current_user(
 
 app = FastAPI(title="Criminal Database Intelligence System (Phase 1)")
 
+def _cors_allow_origins() -> list[str]:
+    # When frontend runs on different hosts/ports, strict origin matching breaks the browser.
+    # For Phase 1, allow all origins in non-production.
+    if getattr(settings, "ENV", "local") != "prod":
+        return ["*"]
+
+    origin = (settings.FRONTEND_ORIGIN or "").strip()
+    if origin in {"*", ""}:
+        return ["*"]
+    return [origin]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_ORIGIN],
-    allow_credentials=True,
+    allow_origins=_cors_allow_origins(),
+    # Frontend uses Authorization header (no cookies), so allow_credentials should be False.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -103,8 +116,21 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup() -> None:
-    Base.metadata.create_all(bind=engine)
-    es_store.ensure_index()
+    # Wait a bit for Postgres / Elasticsearch to become ready.
+    for _ in range(12):
+        try:
+            Base.metadata.create_all(bind=engine)
+            break
+        except Exception:
+            time.sleep(2)
+
+    # ES index may also lag behind at container startup.
+    for _ in range(12):
+        try:
+            es_store.ensure_index()
+            break
+        except Exception:
+            time.sleep(2)
 
 
 @app.get("/health")
