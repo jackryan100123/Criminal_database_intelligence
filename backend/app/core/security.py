@@ -7,7 +7,9 @@ from passlib.context import CryptContext
 
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt has a hard 72-byte password length limit; for Phase 1 we primarily use pbkdf2,
+# but we keep bcrypt enabled so existing bcrypt hashes can still be verified.
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
 ALGORITHM = "HS256"
 
 
