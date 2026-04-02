@@ -70,10 +70,19 @@ export async function deleteProfile(profileId: string) {
   return apiFetch(`/profile/${profileId}`, { method: "DELETE" });
 }
 
-export async function linkProfile(criminalProfileId: string, followerId: string, role: "supporter" | "follower") {
+export async function getProfile(profileId: string) {
+  return apiFetch(`/profile/${profileId}`, { method: "GET" });
+}
+
+export async function linkProfile(
+  criminalProfileId: string,
+  followerId: string,
+  role: "supporter" | "follower",
+  remark?: string
+) {
   return apiFetch(`/profile/${criminalProfileId}/link`, {
     method: "POST",
-    body: JSON.stringify({ follower_id: followerId, role }),
+    body: JSON.stringify({ follower_id: followerId, role, remark }),
   });
 }
 
@@ -87,5 +96,33 @@ export async function getSupporters(criminalProfileId: string) {
 
 export async function searchProfiles(payload: any) {
   return apiFetch("/search", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function uploadProfilePhotos(profileId: string, files: FileList | File[]) {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const form = new FormData();
+  const arr = Array.isArray(files) ? files : Array.from(files);
+  for (const f of arr) form.append("files", f);
+
+  const res = await fetch(`${API_URL}/profile/${profileId}/photos`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const detail = data?.detail ?? data?.message ?? res.statusText;
+    throw new Error(detail);
+  }
+  return data;
+}
+
+export async function getProfilePhotos(profileId: string) {
+  return apiFetch(`/profile/${profileId}/photos`, { method: "GET" });
 }
 

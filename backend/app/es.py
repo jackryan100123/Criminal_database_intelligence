@@ -16,8 +16,9 @@ class ElasticsearchProfilesStore:
         return settings.ELASTICSEARCH_INDEX
 
     def ensure_index(self) -> None:
+        # Phase 1 mapping evolves quickly; recreate index to ensure fields like `info` exist.
         if self.client.indices.exists(index=self.index):
-            return
+            self.client.indices.delete(index=self.index, ignore=[404])
 
         mapping: dict[str, Any] = {
             "mappings": {
@@ -27,10 +28,12 @@ class ElasticsearchProfilesStore:
                     "name": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
                     "organization": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
                     "details": {"type": "text"},
+                    "active_status": {"type": "boolean"},
+                    "remarks": {"type": "text"},
                     "fir_number": {"type": "keyword"},
                     "social_media": {"type": "keyword"},
                     "image_url": {"type": "keyword"},
-                    "custom_attributes": {"type": "flattened"},
+                    "info": {"type": "flattened"},
                     "supporter_ids": {"type": "keyword"},
                     "follower_ids": {"type": "keyword"},
                     "created_at": {"type": "date"},

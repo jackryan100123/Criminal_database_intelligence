@@ -4,19 +4,23 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 import time
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from jose import JWTError
 from pydantic import BaseModel
 
+from pathlib import Path
+import uuid
+
 from app.core.config import settings
-from app.core.security import create_access_token, decode_access_token, new_jti, now_utc, utc_seconds, verify_password, hash_password
+from app.core.security import create_access_token, decode_access_token, new_jti, verify_password, hash_password
 from app.db import SessionLocal, engine
 from app.es import ElasticsearchProfilesStore
-from app.models import Base, Profile, ProfileLink, TokenBlacklist, User
+from app.models import Base, Profile, ProfileLink, ProfilePhoto, TokenBlacklist, User
 from app.schemas import (
     ImageUploadRequest,
     LinkRequest,
@@ -25,12 +29,12 @@ from app.schemas import (
     ProfileCreate,
     ProfileOut,
     ProfileUpdate,
-    ProfileKind,
     RegisterRequest,
     SearchRequest,
     SearchResponse,
     TokenResponse,
-    LinkedProfileOut,
+    RelationOut,
+    ProfileKind,
 )
 from app.services import (
     index_profile_from_db,
@@ -40,6 +44,8 @@ from app.services import (
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 es_store = ElasticsearchProfilesStore()
+
+UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
 
 
 def get_db() -> Session:
@@ -116,6 +122,11 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup() -> None:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    # Serve uploaded images from `/uploads/...` (proxied by nginx in docker).
+    if not any(r.path == "/uploads" for r in app.routes):
+        app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
     # Wait a bit for Postgres / Elasticsearch to become ready.
     for _ in range(12):
         try:
@@ -128,6 +139,14 @@ def startup() -> None:
     for _ in range(12):
         try:
             es_store.ensure_index()
+            # Reindex all profiles from DB so the mapping changes take effect immediately.
+            db = SessionLocal()
+            try:
+                profiles = db.execute(select(Profile)).scalars().all()
+                for p in profiles:
+                    index_profile_from_db(db=db, store=es_store, profile_id=p.id)
+            finally:
+                db.close()
             break
         except Exception:
             time.sleep(2)
@@ -190,7 +209,7 @@ def create_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    if body.kind == "criminal" and not body.name:
+    if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="name is required")
     profile = Profile(
         kind=body.kind,
@@ -200,7 +219,9 @@ def create_profile(
         organization=body.organization,
         fir_number=body.fir_number,
         details=body.details,
-        custom_attributes=body.custom_attributes,
+        active_status=body.active_status,
+        remarks=body.remarks,
+        info=body.info,
     )
     db.add(profile)
     db.commit()
@@ -256,6 +277,9 @@ def get_profile(
         organization=profile.organization,
         fir_number=profile.fir_number,
         details=profile.details,
+        active_status=profile.active_status,
+        remarks=profile.remarks,
+        info=profile.info,
         created_at=profile.created_at.isoformat(),
     )
 
@@ -319,6 +343,7 @@ def link_profile(
         criminal_profile_id=criminal_profile_id,
         linked_profile_id=body.follower_id,
         role=body.role,
+        remark=body.remark,
     )
     db.add(link)
     db.commit()
@@ -333,7 +358,7 @@ def get_followers(
     criminal_profile_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> dict[str, list[LinkedProfileOut]]:
+) -> dict[str, list[RelationOut]]:
     criminal = db.get(Profile, criminal_profile_id)
     if not criminal or criminal.kind != "criminal":
         raise HTTPException(status_code=400, detail="criminal_profile_id must be a criminal profile")
@@ -345,17 +370,19 @@ def get_followers(
         )
     ).scalars().all()
 
-    out: list[LinkedProfileOut] = []
+    out: list[RelationOut] = []
     for link in links:
         linked = db.get(Profile, link.linked_profile_id)
         if linked:
             out.append(
-                LinkedProfileOut(
-                    profile_id=linked.id,
-                    kind=linked.kind,
-                    name=linked.name,
+                RelationOut(
+                    criminal_profile_id=criminal_profile_id,
+                    linked_profile_id=linked.id,
+                    linked_kind=linked.kind,
+                    linked_name=linked.name,
+                    linked_image=linked.image,
                     role="follower",
-                    image=linked.image,
+                    remark=link.remark,
                 )
             )
 
@@ -367,7 +394,7 @@ def get_supporters(
     criminal_profile_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> dict[str, list[LinkedProfileOut]]:
+) -> dict[str, list[RelationOut]]:
     criminal = db.get(Profile, criminal_profile_id)
     if not criminal or criminal.kind != "criminal":
         raise HTTPException(status_code=400, detail="criminal_profile_id must be a criminal profile")
@@ -379,17 +406,19 @@ def get_supporters(
         )
     ).scalars().all()
 
-    out: list[LinkedProfileOut] = []
+    out: list[RelationOut] = []
     for link in links:
         linked = db.get(Profile, link.linked_profile_id)
         if linked:
             out.append(
-                LinkedProfileOut(
-                    profile_id=linked.id,
-                    kind=linked.kind,
-                    name=linked.name,
+                RelationOut(
+                    criminal_profile_id=criminal_profile_id,
+                    linked_profile_id=linked.id,
+                    linked_kind=linked.kind,
+                    linked_name=linked.name,
+                    linked_image=linked.image,
                     role="supporter",
-                    image=linked.image,
+                    remark=link.remark,
                 )
             )
 
@@ -403,16 +432,34 @@ def search_get(
     social_media: Optional[str] = Query(default=None),
     organization: Optional[str] = Query(default=None),
     details: Optional[str] = Query(default=None),
+    active_status: Optional[bool] = Query(default=None),
+    role: Optional[str] = Query(default=None),
+    link_remark: Optional[str] = Query(default=None),
+    # Advanced info filters can be passed as JSON string, e.g. info=%7B%22case_number%22%3A%2212%22%7D
+    info: Optional[str] = Query(default=None),
     size: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> SearchResponse:
+    info_obj = None
+    if info:
+        import json
+
+        try:
+            info_obj = json.loads(info)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid `info` JSON string")
+
     params = SearchRequest(
         name=name,
         fir_number=fir_number,
         social_media=social_media,
         organization=organization,
         details=details,
+        active_status=active_status,
+        role=role,  # type: ignore[arg-type]
+        link_remark=link_remark,
+        info=info_obj,
         size=size,
     )
     matched, related = search_and_expand(db=db, store=es_store, params=params)
@@ -446,4 +493,57 @@ def image_search(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, list[Any]]:
     return {"matched_profiles": []}
+
+
+@app.post("/profile/{profile_id}/photos", response_model=MessageResponse)
+async def upload_profile_photos(
+    profile_id: str,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageResponse:
+    profile = db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    saved = 0
+    for f in files:
+        if not f.filename:
+            continue
+        suffix = Path(f.filename).suffix.lower()
+        if not suffix or len(suffix) > 6:
+            suffix = ".jpg"
+
+        filename = f"{uuid.uuid4().hex}{suffix}"
+        dest_path = UPLOAD_DIR / filename
+
+        content = await f.read()
+        dest_path.write_bytes(content)
+
+        image_url = f"/uploads/{filename}"
+        photo = ProfilePhoto(profile_id=profile_id, image_url=image_url)
+        db.add(photo)
+        saved += 1
+
+    db.commit()
+
+    return MessageResponse(message=f"Uploaded {saved} photo(s).")
+
+
+@app.get("/profile/{profile_id}/photos")
+def get_profile_photos(
+    profile_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    photos = db.execute(
+        select(ProfilePhoto).where(ProfilePhoto.profile_id == profile_id).order_by(ProfilePhoto.uploaded_at.desc())
+    ).scalars().all()
+
+    return {
+        "photos": [
+            {"photo_id": p.id, "image_url": p.image_url, "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None}
+            for p in photos
+        ]
+    }
 

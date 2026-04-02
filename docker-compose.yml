@@ -54,6 +54,8 @@ services:
     volumes:
       # Allows pydantic BaseSettings to load env if needed
       - ./.env:/app/backend/.env:ro
+      # Persist uploaded photos inside container filesystem for access via StaticFiles.
+      - ./backend/uploads:/app/backend/uploads
     restart: unless-stopped
 
   frontend:

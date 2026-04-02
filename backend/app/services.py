@@ -8,32 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.es import ElasticsearchProfilesStore
 from app.models import Profile, ProfileLink
-from app.schemas import ProfileOut, ProfileKind, SearchRequest
-
-
-def _doc_to_profile_out(doc: dict[str, Any]) -> ProfileOut:
-    # ES stores image_url but API uses image.
-    created_at = doc.get("created_at")
-    # Keep it simple: return as string if present.
-    created_at_str: Optional[str] = None
-    if isinstance(created_at, str):
-        created_at_str = created_at
-    elif isinstance(created_at, (int, float)):
-        created_at_str = datetime.fromtimestamp(created_at, tz=timezone.utc).isoformat()
-    elif created_at is not None:
-        created_at_str = str(created_at)
-
-    return ProfileOut(
-        profile_id=str(doc.get("id")),
-        kind=doc.get("kind"),
-        name=doc.get("name", ""),
-        image=doc.get("image_url"),
-        social_media=doc.get("social_media"),
-        organization=doc.get("organization"),
-        fir_number=doc.get("fir_number"),
-        details=doc.get("details"),
-        created_at=created_at_str,
-    )
+from app.schemas import (
+    ProfileOut,
+    RelationOut,
+    SearchRequest,
+    SearchResponse,
+)
 
 
 def index_profile_from_db(db: Session, store: ElasticsearchProfilesStore, profile_id: str) -> None:
@@ -44,6 +24,8 @@ def index_profile_from_db(db: Session, store: ElasticsearchProfilesStore, profil
 
     supporter_ids: list[str] = []
     follower_ids: list[str] = []
+    supporter_ids = []
+    follower_ids = []
 
     if profile.kind == "criminal":
         links = db.execute(select(ProfileLink).where(ProfileLink.criminal_profile_id == profile_id)).scalars().all()
@@ -62,7 +44,9 @@ def index_profile_from_db(db: Session, store: ElasticsearchProfilesStore, profil
         "organization": profile.organization,
         "fir_number": profile.fir_number,
         "details": profile.details,
-        "custom_attributes": profile.custom_attributes or {},
+        "remarks": profile.remarks,
+        "active_status": bool(profile.active_status),
+        "info": profile.info or {},
         "supporter_ids": supporter_ids,
         "follower_ids": follower_ids,
         "created_at": profile.created_at.isoformat() if profile.created_at else None,
@@ -73,25 +57,16 @@ def index_profile_from_db(db: Session, store: ElasticsearchProfilesStore, profil
 def delete_profile_from_es(store: ElasticsearchProfilesStore, profile_id: str) -> None:
     store.delete_profile_doc(profile_id)
 
-
-def build_profile_search_query(params: SearchRequest) -> dict[str, Any]:
-    # ES bool query:
-    # - filter = exact match fields
-    # - should = fuzzy/full-text fields
-    bool_query: dict[str, Any] = {"filter": [{"term": {"kind": "criminal"}}]}
-
-    if params.fir_number:
-        bool_query["filter"].append({"term": {"fir_number": params.fir_number}})
-    if params.social_media:
-        bool_query["filter"].append({"term": {"social_media": params.social_media}})
-
+def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
     should: list[dict[str, Any]] = []
+    filters: list[dict[str, Any]] = []
+
     if params.name:
         should.append(
             {
                 "multi_match": {
                     "query": params.name,
-                    "fields": ["name^4", "organization^2", "details"],
+                    "fields": ["name^4", "organization^2", "details", "remarks"],
                     "type": "best_fields",
                 }
             }
@@ -100,35 +75,170 @@ def build_profile_search_query(params: SearchRequest) -> dict[str, Any]:
         should.append({"match": {"organization": {"query": params.organization}}})
     if params.details:
         should.append({"match": {"details": {"query": params.details}}})
+    if params.social_media:
+        # Social media is usually an exact field (URL); keep it in filters.
+        filters.append({"term": {"social_media": params.social_media}})
+    if params.fir_number:
+        filters.append({"term": {"fir_number": params.fir_number}})
 
-    # If user only provided filters (fir_number/social_media), let filter-only queries work.
+    # Search in universal analyst data
+    if params.info:
+        for k, v in params.info.items():
+            if v is None:
+                continue
+            if isinstance(v, str):
+                should.append({"match": {f"info.{k}": v}})
+            else:
+                # For numbers/bools, term match is more appropriate.
+                filters.append({"term": {f"info.{k}": v}})
+
+    # Optional: search within relationship remark as well (only stored on SQL in Phase 1).
+    # We keep ES query for profile remarks (general) and profile info; link_remark is handled in SQL.
+
+    # If user provides only filters, ES needs minimum_should_match to be omitted.
     if should:
-        bool_query["should"] = should
-        bool_query["minimum_should_match"] = 1
-
-    return {"bool": bool_query}
+        return {"bool": {"filter": filters, "should": should, "minimum_should_match": 1}}
+    return {"bool": {"filter": filters}}
 
 
-def search_and_expand(
-    db: Session,
-    store: ElasticsearchProfilesStore,
-    params: SearchRequest,
-) -> tuple[list[ProfileOut], list[ProfileOut]]:
-    # Requirement: return empty if caller didn't provide any meaningful search terms.
-    if not (params.name or params.fir_number or params.social_media or params.organization or params.details):
+def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: SearchRequest):
+    # Return empty if caller didn't provide any meaningful search terms.
+    if not (
+        params.name
+        or params.fir_number
+        or params.social_media
+        or params.organization
+        or params.details
+        or params.info
+        or params.link_remark
+    ):
         return ([], [])
 
-    query = build_profile_search_query(params)
-    matched_docs = store.search_criminals(query=query, size=params.size)
-    matched_profiles = [_doc_to_profile_out(d) for d in matched_docs]
+    es_query = _build_es_global_query(params)
 
-    related_ids: set[str] = set()
+    # We search both kinds (criminal + user). Then we map user matches -> criminal via DB links.
+    # Oversample to improve result quality for relationship expansion.
+    oversample = max(params.size * 5, 25)
+    matched_docs = store.search_criminals(query=es_query, size=oversample)
+
+    criminal_matches_order: list[str] = []
+    seen_criminals: set[str] = set()
+
+    matched_user_ids: list[str] = []
+    # Capture order for criminals/user hits from ES.
     for d in matched_docs:
-        related_ids.update(d.get("supporter_ids", []) or [])
-        related_ids.update(d.get("follower_ids", []) or [])
+        if not d.get("id") or not d.get("kind"):
+            continue
+        if d.get("kind") == "criminal":
+            cid = str(d["id"])
+            if cid not in seen_criminals:
+                criminal_matches_order.append(cid)
+                seen_criminals.add(cid)
+        else:
+            matched_user_ids.append(str(d["id"]))
 
-    related_docs = store.mget_profiles(related_ids)
-    related_profiles = [_doc_to_profile_out(d) for d in related_docs]
+    role_filter = params.role
+    info_role_filter = role_filter
+
+    # Build mapping: matched user -> criminal ids via ProfileLink.
+    user_to_criminals: dict[str, list[str]] = {}
+    links_query = select(ProfileLink).where(ProfileLink.linked_profile_id.in_(matched_user_ids))
+    if role_filter:
+        links_query = links_query.where(ProfileLink.role == role_filter)
+    if params.link_remark:
+        # Case-insensitive match for relationship remark.
+        links_query = links_query.where(ProfileLink.remark.ilike(f"%{params.link_remark}%"))
+
+    if matched_user_ids:
+        user_links = db.execute(links_query).scalars().all()
+        for link in user_links:
+            user_to_criminals.setdefault(link.linked_profile_id, []).append(link.criminal_profile_id)
+
+        # Expand criminals in ES order (so it feels "intelligent")
+        for d in matched_docs:
+            if d.get("kind") != "user":
+                continue
+            uid = str(d.get("id"))
+            for criminal_id in user_to_criminals.get(uid, []):
+                if criminal_id not in seen_criminals:
+                    criminal_matches_order.append(criminal_id)
+                    seen_criminals.add(criminal_id)
+
+    # If link_remark is provided, include criminals that have a link remark match (even if user didn't match).
+    if params.link_remark:
+        links_remark_query = select(ProfileLink.criminal_profile_id).where(ProfileLink.remark.ilike(f"%{params.link_remark}%"))
+        if role_filter:
+            links_remark_query = links_remark_query.where(ProfileLink.role == role_filter)
+        remark_criminals = db.execute(links_remark_query).scalars().all()
+        for cid in remark_criminals:
+            if cid not in seen_criminals:
+                criminal_matches_order.append(cid)
+                seen_criminals.add(cid)
+
+    # Apply active_status filter to criminal results
+    if params.active_status is not None:
+        criminal_profiles_tmp = db.execute(
+            select(Profile.id).where(Profile.id.in_(criminal_matches_order), Profile.active_status == params.active_status)
+        ).scalars().all()
+        allowed = set(criminal_profiles_tmp)
+        criminal_matches_order = [cid for cid in criminal_matches_order if cid in allowed]
+
+    criminal_ids = criminal_matches_order[: params.size]
+    if not criminal_ids:
+        return ([], [])
+
+    profiles_map: dict[str, Profile] = {}
+    profiles = db.execute(select(Profile).where(Profile.id.in_(criminal_ids))).scalars().all()
+    profiles_map = {p.id: p for p in profiles}
+
+    matched_profiles: list[ProfileOut] = []
+    for cid in criminal_ids:
+        p = profiles_map.get(cid)
+        if not p:
+            continue
+        matched_profiles.append(
+            ProfileOut(
+                profile_id=p.id,
+                kind=p.kind,
+                name=p.name,
+                image=p.image,
+                social_media=p.social_media,
+                organization=p.organization,
+                fir_number=p.fir_number,
+                details=p.details,
+                active_status=p.active_status,
+                remarks=p.remarks,
+                info=p.info,
+                created_at=p.created_at.isoformat() if p.created_at else None,
+            )
+        )
+
+    # Related profiles: supporters/followers for matched criminals (with remark)
+    related_profiles: list[RelationOut] = []
+    rel_links_query = select(ProfileLink).where(ProfileLink.criminal_profile_id.in_(criminal_ids))
+    if info_role_filter:
+        rel_links_query = rel_links_query.where(ProfileLink.role == info_role_filter)
+    if params.link_remark:
+        rel_links_query = rel_links_query.where(ProfileLink.remark.ilike(f"%{params.link_remark}%"))
+
+    links = db.execute(rel_links_query).scalars().all()
+    for link in links:
+        linked_profile = profiles_map.get(link.linked_profile_id)
+        if not linked_profile:
+            linked_profile = db.get(Profile, link.linked_profile_id)
+        if not linked_profile:
+            continue
+        related_profiles.append(
+            RelationOut(
+                criminal_profile_id=link.criminal_profile_id,
+                linked_profile_id=linked_profile.id,
+                linked_kind=linked_profile.kind,
+                linked_name=linked_profile.name,
+                linked_image=linked_profile.image,
+                role=link.role,
+                remark=link.remark,
+            )
+        )
 
     return (matched_profiles, related_profiles)
 

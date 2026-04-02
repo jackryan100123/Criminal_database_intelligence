@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Column
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy import JSON
 
@@ -40,8 +40,12 @@ class Profile(Base):
     fir_number = Column(String(100), nullable=True)
     details = Column(Text, nullable=True)
 
-    # Flexible attributes. For Phase 1 this is optional.
-    custom_attributes = Column(JSON, nullable=True)
+    active_status = Column(Boolean, nullable=False, default=True, server_default="true")
+    remarks = Column(Text, nullable=True)
+
+    # Universal extra data field for all profiles (analyst can store anything).
+    # Stored as JSON and indexed in Elasticsearch as `info`.
+    info = Column(JSON, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -53,6 +57,7 @@ class ProfileLink(Base):
     criminal_profile_id = Column(String(36), ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True)
     linked_profile_id = Column(String(36), ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(String(20), nullable=False)  # "supporter" | "follower"
+    remark = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -68,4 +73,13 @@ class TokenBlacklist(Base):
     jti = Column(String(36), unique=True, index=True, nullable=False)
     expires_at = Column(DateTime, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProfilePhoto(Base):
+    __tablename__ = "profile_photos"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    profile_id = Column(String(36), ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True)
+    image_url = Column(String(1024), nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
