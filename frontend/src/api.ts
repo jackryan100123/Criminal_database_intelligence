@@ -126,3 +126,37 @@ export async function getProfilePhotos(profileId: string) {
   return apiFetch(`/profile/${profileId}/photos`, { method: "GET" });
 }
 
+export async function listProfiles(params?: { kind?: string; limit?: number; offset?: number }) {
+  const sp = new URLSearchParams();
+  if (params?.kind) sp.set("kind", params.kind);
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.offset != null) sp.set("offset", String(params.offset));
+  const q = sp.toString();
+  return apiFetch(`/profiles${q ? `?${q}` : ""}`, { method: "GET" });
+}
+
+export async function getDashboardStats() {
+  return apiFetch("/dashboard/stats", { method: "GET" });
+}
+
+export async function getDashboardActivity(limit = 20) {
+  return apiFetch(`/dashboard/activity?limit=${limit}`, { method: "GET" });
+}
+
+export async function getRelationships(params?: { q?: string; role?: string; limit?: number; offset?: number }) {
+  const sp = new URLSearchParams();
+  if (params?.q) sp.set("q", params.q);
+  if (params?.role) sp.set("role", params.role);
+  if (params?.limit != null) sp.set("limit", String(params.limit));
+  if (params?.offset != null) sp.set("offset", String(params.offset));
+  return apiFetch(`/relationships?${sp.toString()}`, { method: "GET" });
+}
+
+export async function getAnalyticsNetwork() {
+  return apiFetch("/analytics/network", { method: "GET" });
+}
+
+export async function getTopCriminals(limit = 10) {
+  return apiFetch(`/analytics/top-criminals?limit=${limit}`, { method: "GET" });
+}
+

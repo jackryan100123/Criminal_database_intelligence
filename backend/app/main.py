@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, st
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from jose import JWTError
 from pydantic import BaseModel
@@ -546,4 +546,233 @@ def get_profile_photos(
             for p in photos
         ]
     }
+
+
+@app.get("/profiles")
+def list_profiles(
+    kind: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    q = select(Profile)
+    if kind:
+        q = q.where(Profile.kind == kind)
+    q = q.order_by(Profile.created_at.desc()).limit(limit).offset(offset)
+    rows = db.execute(q).scalars().all()
+    return {
+        "profiles": [
+            {
+                "profile_id": p.id,
+                "kind": p.kind,
+                "name": p.name,
+                "fir_number": p.fir_number,
+                "organization": p.organization,
+                "active_status": p.active_status,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in rows
+        ],
+        "total": len(rows),
+    }
+
+
+@app.get("/dashboard/stats")
+def dashboard_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    total_criminals = db.execute(select(func.count()).select_from(Profile).where(Profile.kind == "criminal")).scalar() or 0
+    active_criminals = db.execute(
+        select(func.count()).select_from(Profile).where(Profile.kind == "criminal", Profile.active_status.is_(True))
+    ).scalar() or 0
+    inactive_criminals = max(int(total_criminals) - int(active_criminals), 0)
+    total_users = db.execute(select(func.count()).select_from(Profile).where(Profile.kind == "user")).scalar() or 0
+    supporters = db.execute(select(func.count()).select_from(ProfileLink).where(ProfileLink.role == "supporter")).scalar() or 0
+    followers = db.execute(select(func.count()).select_from(ProfileLink).where(ProfileLink.role == "follower")).scalar() or 0
+    total_links = db.execute(select(func.count()).select_from(ProfileLink)).scalar() or 0
+    total_photos = db.execute(select(func.count()).select_from(ProfilePhoto)).scalar() or 0
+
+    return {
+        "active_criminals": int(active_criminals),
+        "inactive_criminals": int(inactive_criminals),
+        "total_criminals": int(total_criminals),
+        "total_user_profiles": int(total_users),
+        "supporter_links": int(supporters),
+        "follower_links": int(followers),
+        "total_relationship_links": int(total_links),
+        "total_photos": int(total_photos),
+    }
+
+
+@app.get("/dashboard/activity")
+def dashboard_activity(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    events: list[dict[str, Any]] = []
+
+    profiles = db.execute(select(Profile).order_by(Profile.created_at.desc()).limit(15)).scalars().all()
+    for p in profiles:
+        events.append(
+            {
+                "type": "profile_created",
+                "at": p.created_at.isoformat() if p.created_at else None,
+                "title": f"Profile created: {p.name}",
+                "subtitle": f"{p.kind} · {p.id}",
+                "profile_id": p.id,
+            }
+        )
+
+    photos = (
+        db.execute(select(ProfilePhoto).order_by(ProfilePhoto.uploaded_at.desc()).limit(15)).scalars().all()
+    )
+    for ph in photos:
+        prof = db.get(Profile, ph.profile_id)
+        events.append(
+            {
+                "type": "photo_uploaded",
+                "at": ph.uploaded_at.isoformat() if ph.uploaded_at else None,
+                "title": f"Photo uploaded{f' for {prof.name}' if prof else ''}",
+                "subtitle": ph.image_url,
+                "profile_id": ph.profile_id,
+            }
+        )
+
+    links = db.execute(select(ProfileLink).order_by(ProfileLink.created_at.desc()).limit(15)).scalars().all()
+    for ln in links:
+        cr = db.get(Profile, ln.criminal_profile_id)
+        lk = db.get(Profile, ln.linked_profile_id)
+        events.append(
+            {
+                "type": "relationship_linked",
+                "at": ln.created_at.isoformat() if ln.created_at else None,
+                "title": f"New {ln.role}: {lk.name if lk else ln.linked_profile_id}",
+                "subtitle": f"Linked to criminal {cr.name if cr else ln.criminal_profile_id}",
+                "criminal_profile_id": ln.criminal_profile_id,
+                "linked_profile_id": ln.linked_profile_id,
+                "role": ln.role,
+            }
+        )
+
+    events.sort(key=lambda x: x.get("at") or "", reverse=True)
+    return {"activity": events[:limit]}
+
+
+@app.get("/relationships")
+def list_relationships(
+    q: Optional[str] = Query(default=None),
+    role: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    link_q = select(ProfileLink).order_by(ProfileLink.created_at.desc())
+    if role in ("supporter", "follower"):
+        link_q = link_q.where(ProfileLink.role == role)
+    rows = db.execute(link_q).scalars().all()
+
+    out: list[dict[str, Any]] = []
+    for ln in rows:
+        cr = db.get(Profile, ln.criminal_profile_id)
+        lk = db.get(Profile, ln.linked_profile_id)
+        if not cr or not lk:
+            continue
+        if q:
+            needle = q.lower()
+            blob = f"{cr.name} {lk.name} {ln.remark or ''} {cr.fir_number or ''}".lower()
+            if needle not in blob:
+                continue
+        out.append(
+            {
+                "link_id": ln.id,
+                "criminal_profile_id": ln.criminal_profile_id,
+                "criminal_name": cr.name,
+                "criminal_active": cr.active_status,
+                "linked_profile_id": ln.linked_profile_id,
+                "linked_name": lk.name,
+                "linked_kind": lk.kind,
+                "role": ln.role,
+                "remark": ln.remark,
+                "created_at": ln.created_at.isoformat() if ln.created_at else None,
+            }
+        )
+
+    sliced = out[offset : offset + limit]
+    return {"relationships": sliced, "total_filtered": len(out)}
+
+
+@app.get("/analytics/network")
+def analytics_network(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    nodes_map: dict[str, dict[str, Any]] = {}
+    links_out: list[dict[str, Any]] = []
+
+    criminals = db.execute(select(Profile).where(Profile.kind == "criminal")).scalars().all()
+    for c in criminals:
+        nodes_map[c.id] = {
+            "id": c.id,
+            "label": c.name,
+            "kind": "criminal",
+            "active": bool(c.active_status),
+        }
+
+    all_links = db.execute(select(ProfileLink)).scalars().all()
+    for ln in all_links:
+        cr = db.get(Profile, ln.criminal_profile_id)
+        lk = db.get(Profile, ln.linked_profile_id)
+        if not cr or not lk:
+            continue
+        if cr.id not in nodes_map:
+            nodes_map[cr.id] = {"id": cr.id, "label": cr.name, "kind": "criminal", "active": bool(cr.active_status)}
+        nodes_map[lk.id] = {"id": lk.id, "label": lk.name, "kind": lk.kind, "active": bool(getattr(lk, "active_status", True))}
+        links_out.append(
+            {"source": cr.id, "target": lk.id, "role": ln.role, "remark": ln.remark}
+        )
+
+    return {"nodes": list(nodes_map.values()), "links": links_out}
+
+
+@app.get("/analytics/top-criminals")
+def analytics_top_criminals(
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    criminal_ids = db.execute(select(Profile.id).where(Profile.kind == "criminal")).scalars().all()
+    counts: list[tuple[str, int, int, int]] = []
+    for cid in criminal_ids:
+        sup = db.execute(
+            select(func.count()).select_from(ProfileLink).where(
+                ProfileLink.criminal_profile_id == cid, ProfileLink.role == "supporter"
+            )
+        ).scalar() or 0
+        fol = db.execute(
+            select(func.count()).select_from(ProfileLink).where(
+                ProfileLink.criminal_profile_id == cid, ProfileLink.role == "follower"
+            )
+        ).scalar() or 0
+        counts.append((cid, int(sup), int(fol), int(sup) + int(fol)))
+
+    counts.sort(key=lambda x: x[3], reverse=True)
+    top = counts[:limit]
+    result = []
+    for cid, sup, fol, total in top:
+        p = db.get(Profile, cid)
+        if p:
+            result.append(
+                {
+                    "criminal_profile_id": cid,
+                    "name": p.name,
+                    "supporters": sup,
+                    "followers": fol,
+                    "total_links": total,
+                }
+            )
+    return {"top": result}
 
