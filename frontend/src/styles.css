@@ -145,6 +145,21 @@ a {
   overflow-y: auto;
 }
 
+.sidebar-nav.sidebar-nav-records {
+  flex: 0 0 auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(148, 163, 184, 0.85);
+  padding: 4px 12px 8px;
+}
+
 .nav-item {
   display: flex;
   align-items: center;

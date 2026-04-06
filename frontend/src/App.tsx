@@ -24,6 +24,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/entities" element={<Navigate to="/profiles?kind=user" state={{ openDirectory: true }} replace />} />
         <Route path="/profiles" element={<ProfilesPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/relationships" element={<RelationshipsPage />} />

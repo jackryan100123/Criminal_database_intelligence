@@ -1,15 +1,18 @@
 import React, { useMemo, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { logout } from "../api";
 import { useTheme } from "../theme/ThemeContext";
 
-function titleForPath(pathname: string): string {
+function titleForPath(pathname: string, search: string): string {
   if (pathname.startsWith("/criminal/")) return "Criminal case file";
   if (pathname.startsWith("/entity/")) return "Person / entity profile";
   if (pathname.startsWith("/profile/")) return "Person / entity profile";
+  if (pathname === "/profiles") {
+    return new URLSearchParams(search).get("kind") === "user" ? "People / entities" : "Criminal case files";
+  }
+  if (pathname === "/entities") return "People / entities";
   const map: Record<string, string> = {
     "/": "Investigation workspace",
-    "/profiles": "Case files & entities",
     "/search": "Global search",
     "/relationships": "Relationship links",
     "/analytics": "Analytics & network",
@@ -18,12 +21,35 @@ function titleForPath(pathname: string): string {
   return map[pathname] ?? "Workspace";
 }
 
+function ProfilesSideLink({
+  pathname,
+  search,
+  label,
+  collapsed,
+}: {
+  pathname: string;
+  search: string;
+  label: string;
+  collapsed: boolean;
+}) {
+  const location = useLocation();
+  const targetKind = new URLSearchParams(search).get("kind") === "user" ? "user" : "criminal";
+  const currentKind = new URLSearchParams(location.search).get("kind") === "user" ? "user" : "criminal";
+  const active = location.pathname === "/profiles" && currentKind === targetKind;
+  return (
+    <Link to={{ pathname, search }} state={{ openDirectory: true }} className={`nav-item ${active ? "active" : ""}`}>
+      <span className="nav-dot" />
+      {!collapsed && <span>{label}</span>}
+    </Link>
+  );
+}
+
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
-  const pageTitle = useMemo(() => titleForPath(location.pathname), [location.pathname]);
+  const pageTitle = useMemo(() => titleForPath(location.pathname, location.search), [location.pathname, location.search]);
 
   const doLogout = async () => {
     try {
@@ -37,7 +63,6 @@ export default function AppShell() {
 
   const nav = [
     { to: "/", label: "Workspace", end: true },
-    { to: "/profiles", label: "Case files" },
     { to: "/search", label: "Search" },
     { to: "/relationships", label: "Links" },
     { to: "/analytics", label: "Network" },
@@ -67,6 +92,11 @@ export default function AppShell() {
             </NavLink>
           ))}
         </nav>
+        <div className="sidebar-nav sidebar-nav-records">
+          {!collapsed && <div className="sidebar-group-label">Records</div>}
+          <ProfilesSideLink pathname="/profiles" search="?kind=criminal" label="Criminal cases" collapsed={collapsed} />
+          <ProfilesSideLink pathname="/profiles" search="?kind=user" label="People / entities" collapsed={collapsed} />
+        </div>
         <div className="sidebar-footer">
           {!collapsed && (
             <div className="sidebar-meta">

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { createProfile, listProfiles } from "../api";
 import { criminalProfilePath, entityProfilePath } from "../paths";
 
@@ -18,10 +18,13 @@ function infoRowsToObject(rows: InfoRow[]): Record<string, any> {
 export default function ProfilesPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  /** URL `?kind=user` | `?kind=criminal` (default) — keeps sidebar “People / entities” vs “Criminal cases” in sync. */
+  const directoryKind = searchParams.get("kind") === "user" ? "user" : "criminal";
+
   const [rows, setRows] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<"list" | "newCriminal" | "newEntity">("list");
-  const [directoryKind, setDirectoryKind] = useState<"criminal" | "user">("criminal");
 
   const [criminalForm, setCriminalForm] = useState({
     name: "",
@@ -64,10 +67,32 @@ export default function ProfilesPage() {
     load();
   }, [directoryKind]);
 
+  /** Legacy `state.directoryKind` → URL; sidebar uses `openDirectory` to reset to directory tab. */
   useEffect(() => {
-    const k = (location.state as { directoryKind?: "criminal" | "user" } | null)?.directoryKind;
-    if (k === "criminal" || k === "user") setDirectoryKind(k);
-  }, [location.state]);
+    const st = (location.state as { directoryKind?: "criminal" | "user" })?.directoryKind;
+    if (st === "criminal" || st === "user") {
+      navigate({ pathname: "/profiles", search: `?kind=${st}` }, { replace: true, state: { openDirectory: true } });
+    }
+  }, [location.state, navigate]);
+
+  useEffect(() => {
+    const openDir = (location.state as { openDirectory?: boolean })?.openDirectory;
+    if (openDir) {
+      setTab("list");
+      navigate({ pathname: "/profiles", search: location.search }, { replace: true, state: {} });
+    }
+  }, [location.state, location.search, navigate]);
+
+  const goTab = (t: "list" | "newCriminal" | "newEntity") => {
+    setTab(t);
+    if (t === "newEntity") setSearchParams({ kind: "user" }, { replace: true });
+    if (t === "newCriminal") setSearchParams({ kind: "criminal" }, { replace: true });
+  };
+
+  const setDirectoryKind = (k: "criminal" | "user") => {
+    setSearchParams({ kind: k }, { replace: true });
+    setTab("list");
+  };
 
   const doCreateCriminal = async () => {
     setErr("");
@@ -140,13 +165,13 @@ export default function ProfilesPage() {
         </p>
       </div>
       <div className="tabs">
-        <button type="button" className={tab === "list" ? "active" : ""} onClick={() => setTab("list")}>
+        <button type="button" className={tab === "list" ? "active" : ""} onClick={() => goTab("list")}>
           Directory
         </button>
-        <button type="button" className={tab === "newCriminal" ? "active" : ""} onClick={() => setTab("newCriminal")}>
+        <button type="button" className={tab === "newCriminal" ? "active" : ""} onClick={() => goTab("newCriminal")}>
           New criminal case
         </button>
-        <button type="button" className={tab === "newEntity" ? "active" : ""} onClick={() => setTab("newEntity")}>
+        <button type="button" className={tab === "newEntity" ? "active" : ""} onClick={() => goTab("newEntity")}>
           New person / entity
         </button>
       </div>

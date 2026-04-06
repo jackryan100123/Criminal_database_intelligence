@@ -91,10 +91,20 @@ export default function DashboardPage() {
       </section>
 
       <div className="dashboard-actions">
-        <button type="button" className="btn btn-secondary" onClick={() => navigate("/profiles", { state: { directoryKind: "criminal" } })}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() =>
+            navigate({ pathname: "/profiles", search: "?kind=criminal" }, { state: { openDirectory: true } })
+          }
+        >
           Browse case files
         </button>
-        <button type="button" className="btn btn-secondary" onClick={() => navigate("/profiles", { state: { directoryKind: "user" } })}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => navigate({ pathname: "/profiles", search: "?kind=user" }, { state: { openDirectory: true } })}
+        >
           People &amp; entities
         </button>
         <button type="button" className="btn btn-secondary" onClick={() => navigate("/relationships")}>
@@ -106,7 +116,13 @@ export default function DashboardPage() {
       </div>
 
       <section className="stats-grid">
-        <button type="button" className="stat-card clickable" onClick={() => navigate("/profiles")}>
+        <button
+          type="button"
+          className="stat-card clickable"
+          onClick={() =>
+            navigate({ pathname: "/profiles", search: "?kind=criminal" }, { state: { openDirectory: true } })
+          }
+        >
           <div className="stat-label">Active criminal files</div>
           <div className="stat-value accent">{stats?.active_criminals ?? "—"}</div>
           <div className="stat-hint">of {stats?.total_criminals ?? "—"} total</div>
@@ -134,7 +150,7 @@ export default function DashboardPage() {
         <button
           type="button"
           className="stat-card clickable"
-          onClick={() => navigate("/profiles", { state: { directoryKind: "user" } })}
+          onClick={() => navigate({ pathname: "/profiles", search: "?kind=user" }, { state: { openDirectory: true } })}
         >
           <div className="stat-label">Person / entity profiles</div>
           <div className="stat-value">{stats?.total_user_profiles ?? "—"}</div>
