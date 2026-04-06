@@ -29,6 +29,8 @@ from app.schemas import (
     LinkUpdateRequest,
     LoginRequest,
     MessageResponse,
+    ConvertToCriminalRequest,
+    LinkedToCriminalOut,
     ProfileCreate,
     ProfileOut,
     ProfilePhotoUpdate,
@@ -77,6 +79,24 @@ def ensure_profile_photo_columns() -> None:
     if "analysis_notes" not in cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE profile_photos ADD COLUMN analysis_notes TEXT"))
+
+
+def ensure_profile_contact_columns() -> None:
+    insp = sa_inspect(engine)
+    if not insp.has_table("profiles"):
+        return
+    cols = {c["name"] for c in insp.get_columns("profiles")}
+    stmts: list[str] = []
+    if "phone" not in cols:
+        stmts.append("ALTER TABLE profiles ADD COLUMN phone VARCHAR(64)")
+    if "email_contact" not in cols:
+        stmts.append("ALTER TABLE profiles ADD COLUMN email_contact VARCHAR(255)")
+    if "address" not in cols:
+        stmts.append("ALTER TABLE profiles ADD COLUMN address TEXT")
+    if stmts:
+        with engine.begin() as conn:
+            for s in stmts:
+                conn.execute(text(s))
 
 
 def get_db() -> Session:
@@ -163,6 +183,7 @@ def startup() -> None:
         try:
             Base.metadata.create_all(bind=engine)
             ensure_profile_photo_columns()
+            ensure_profile_contact_columns()
             break
         except Exception:
             time.sleep(2)
@@ -270,6 +291,9 @@ def create_profile(
         details=body.details,
         active_status=body.active_status,
         remarks=body.remarks,
+        phone=body.phone,
+        email_contact=body.email_contact,
+        address=body.address,
         info=body.info,
     )
     db.add(profile)
@@ -345,9 +369,100 @@ def get_profile(
         details=profile.details,
         active_status=profile.active_status,
         remarks=profile.remarks,
+        phone=getattr(profile, "phone", None),
+        email_contact=getattr(profile, "email_contact", None),
+        address=getattr(profile, "address", None),
         info=profile.info,
         created_at=profile.created_at.isoformat(),
     )
+
+
+@app.get("/profile/{profile_id}/linked-to-criminals")
+def profile_linked_to_criminals(
+    profile_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """All criminal files this person is linked to (as supporter or follower)."""
+    prof = db.get(Profile, profile_id)
+    if not prof:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if prof.kind != "user":
+        return {"links": []}
+
+    links = db.execute(
+        select(ProfileLink).where(ProfileLink.linked_profile_id == profile_id).order_by(ProfileLink.created_at.desc())
+    ).scalars().all()
+
+    out: list[LinkedToCriminalOut] = []
+    for link in links:
+        cr = db.get(Profile, link.criminal_profile_id)
+        if not cr or cr.kind != "criminal":
+            continue
+        out.append(
+            LinkedToCriminalOut(
+                link_id=link.id,
+                criminal_profile_id=cr.id,
+                criminal_name=cr.name,
+                criminal_active=bool(cr.active_status),
+                role=link.role,  # type: ignore[arg-type]
+                remark=link.remark,
+            )
+        )
+    return {"links": out}
+
+
+@app.post("/profile/{profile_id}/convert-to-criminal")
+def convert_profile_to_criminal(
+    profile_id: str,
+    body: ConvertToCriminalRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Turn a person/entity profile into a criminal record (same id; links preserved)."""
+    profile = db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if profile.kind != "user":
+        raise HTTPException(status_code=400, detail="Only person / entity profiles can be converted to a criminal record.")
+
+    nf = _normalize_fir(body.fir_number)
+    if not nf:
+        raise HTTPException(status_code=400, detail="FIR number is required.")
+
+    dup = db.execute(
+        select(Profile.id).where(
+            Profile.kind == "criminal",
+            Profile.fir_number.isnot(None),
+            func.upper(func.trim(Profile.fir_number)) == nf.upper(),
+        )
+    ).scalars().first()
+    if dup:
+        raise HTTPException(
+            status_code=409,
+            detail="A criminal profile with this FIR number already exists.",
+        )
+
+    profile.kind = "criminal"
+    profile.fir_number = body.fir_number.strip()
+    if body.organization is not None:
+        profile.organization = body.organization
+    if body.details is not None:
+        profile.details = body.details
+    if body.remarks is not None:
+        profile.remarks = body.remarks
+
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+
+    index_profile_from_db(db=db, store=es_store, profile_id=profile_id)
+
+    return {
+        "message": "Profile is now a criminal record. Existing links to other cases are unchanged.",
+        "profile_id": profile.id,
+        "kind": profile.kind,
+    }
 
 
 @app.delete("/profile/{profile_id}", response_model=MessageResponse)
@@ -581,8 +696,8 @@ def search_get(
         info=info_obj,
         size=size,
     )
-    matched, related = search_and_expand(db=db, store=es_store, params=params)
-    return SearchResponse(profiles=matched, related_profiles=related)
+    matched, related, entities = search_and_expand(db=db, store=es_store, params=params)
+    return SearchResponse(profiles=matched, related_profiles=related, entity_profiles=entities)
 
 
 @app.post("/search", response_model=SearchResponse)
@@ -591,8 +706,8 @@ def search_post(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> SearchResponse:
-    matched, related = search_and_expand(db=db, store=es_store, params=body)
-    return SearchResponse(profiles=matched, related_profiles=related)
+    matched, related, entities = search_and_expand(db=db, store=es_store, params=body)
+    return SearchResponse(profiles=matched, related_profiles=related, entity_profiles=entities)
 
 
 @app.post("/image/upload", response_model=MessageResponse)
@@ -754,6 +869,7 @@ def list_profiles(
                 "kind": p.kind,
                 "name": p.name,
                 "fir_number": p.fir_number,
+                "phone": getattr(p, "phone", None),
                 "organization": p.organization,
                 "active_status": p.active_status,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
@@ -809,6 +925,7 @@ def dashboard_activity(
                 "title": f"Profile created: {p.name}",
                 "subtitle": f"{p.kind} · {p.id}",
                 "profile_id": p.id,
+                "profile_kind": p.kind,
             }
         )
 
@@ -824,6 +941,7 @@ def dashboard_activity(
                 "title": f"Photo uploaded{f' for {prof.name}' if prof else ''}",
                 "subtitle": ph.image_url,
                 "profile_id": ph.profile_id,
+                "profile_kind": prof.kind if prof else None,
             }
         )
 

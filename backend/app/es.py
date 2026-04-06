@@ -34,6 +34,9 @@ class ElasticsearchProfilesStore:
                     # Text + keyword for fuzzy / partial and exact filters.
                     "fir_number": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
                     "social_media": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
+                    "phone": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 64}}},
+                    "email_contact": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
+                    "address": {"type": "text"},
                     "image_url": {"type": "keyword"},
                     "info": {"type": "flattened"},
                     "supporter_ids": {"type": "keyword"},

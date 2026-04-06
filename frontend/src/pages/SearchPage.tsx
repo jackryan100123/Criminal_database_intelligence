@@ -262,6 +262,29 @@ export default function SearchPage() {
           </section>
           <section className="panel">
             <div className="panel-header">
+              <h3>Person / entity matches</h3>
+              <span className="pill subtle">{result.entity_profiles?.length ?? 0}</span>
+            </div>
+            <div className="card-list">
+              {(result.entity_profiles ?? []).map((p: any) => (
+                <button key={p.profile_id} type="button" className="result-card" onClick={() => navigate(`/profile/${p.profile_id}`)}>
+                  <div className="result-title">{p.name}</div>
+                  <div className="result-meta">
+                    {p.phone || "—"} · {p.email_contact || "—"} ·{" "}
+                    <span className={p.active_status ? "status-active" : "status-inactive"}>{p.active_status ? "Active" : "Inactive"}</span>
+                  </div>
+                </button>
+              ))}
+              {(result.entity_profiles ?? []).length === 0 ? (
+                <div className="empty-state">
+                  <p>No direct person/entity matches in this search.</p>
+                  <p className="muted small">Linked supporters and followers appear under “Connected entities” when criminal files match.</p>
+                </div>
+              ) : null}
+            </div>
+          </section>
+          <section className="panel">
+            <div className="panel-header">
               <h3>Connected entities</h3>
               <span className="pill subtle">{result.related_profiles?.length ?? 0}</span>
             </div>
@@ -274,7 +297,9 @@ export default function SearchPage() {
                         {r.linked_name}
                       </button>
                     ) : (
-                      <span>{r.linked_name}</span>
+                      <button type="button" className="text-link" onClick={() => navigate(`/profile/${r.linked_profile_id}`)}>
+                        {r.linked_name}
+                      </button>
                     )}{" "}
                     <span className="pill subtle">{r.role}</span>
                   </div>

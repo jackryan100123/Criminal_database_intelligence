@@ -14,6 +14,45 @@ from app.schemas import (
 )
 
 
+def _profile_out_from_model(p: Profile) -> ProfileOut:
+    return ProfileOut(
+        profile_id=p.id,
+        kind=p.kind,
+        name=p.name,
+        image=p.image,
+        social_media=p.social_media,
+        organization=p.organization,
+        fir_number=p.fir_number,
+        details=p.details,
+        active_status=p.active_status,
+        remarks=p.remarks,
+        phone=getattr(p, "phone", None),
+        email_contact=getattr(p, "email_contact", None),
+        address=getattr(p, "address", None),
+        info=p.info,
+        created_at=p.created_at.isoformat() if p.created_at else None,
+    )
+
+
+def _entity_profiles_from_es_docs(db: Session, matched_docs: list[dict[str, Any]], limit: int) -> list[ProfileOut]:
+    out: list[ProfileOut] = []
+    seen: set[str] = set()
+    for d in matched_docs:
+        if d.get("kind") != "user" or not d.get("id"):
+            continue
+        uid = str(d["id"])
+        if uid in seen:
+            continue
+        seen.add(uid)
+        p = db.get(Profile, uid)
+        if not p or p.kind != "user":
+            continue
+        out.append(_profile_out_from_model(p))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def index_profile_from_db(db: Session, store: ElasticsearchProfilesStore, profile_id: str) -> None:
     profile: Optional[Profile] = db.get(Profile, profile_id)
     if profile is None:
@@ -37,6 +76,9 @@ def index_profile_from_db(db: Session, store: ElasticsearchProfilesStore, profil
         "name": profile.name,
         "image_url": profile.image,
         "social_media": profile.social_media,
+        "phone": getattr(profile, "phone", None),
+        "email_contact": getattr(profile, "email_contact", None),
+        "address": getattr(profile, "address", None),
         "organization": profile.organization,
         "fir_number": profile.fir_number,
         "details": profile.details,
@@ -110,6 +152,9 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
                                     "remarks",
                                     "fir_number",
                                     "social_media",
+                                    "phone",
+                                    "email_contact",
+                                    "address",
                                 ],
                                 "type": "best_fields",
                                 "fuzziness": "AUTO",
@@ -120,6 +165,9 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
                         {"match_bool_prefix": {"remarks": {"query": q_global}}},
                         {"match_bool_prefix": {"fir_number": {"query": q_global}}},
                         {"match_bool_prefix": {"social_media": {"query": q_global}}},
+                        {"match_bool_prefix": {"phone": {"query": q_global}}},
+                        {"match_bool_prefix": {"email_contact": {"query": q_global}}},
+                        {"match_bool_prefix": {"address": {"query": q_global}}},
                         # Flattened `info` is a single field.
                         {
                             "simple_query_string": {
@@ -236,7 +284,7 @@ def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: Se
         or params.active_status is not None
     )
     if not has_terms:
-        return ([], [])
+        return ([], [], [])
 
     es_query = _build_es_global_query(params)
 
@@ -320,8 +368,10 @@ def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: Se
         criminal_matches_order = [cid for cid in criminal_matches_order if cid in allowed]
 
     criminal_ids = criminal_matches_order[: params.size]
+    entity_profiles = _entity_profiles_from_es_docs(db, matched_docs, params.size)
+
     if not criminal_ids:
-        return ([], [])
+        return ([], [], entity_profiles)
 
     profiles_map: dict[str, Profile] = {}
     profiles = db.execute(select(Profile).where(Profile.id.in_(criminal_ids))).scalars().all()
@@ -332,22 +382,7 @@ def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: Se
         p = profiles_map.get(cid)
         if not p:
             continue
-        matched_profiles.append(
-            ProfileOut(
-                profile_id=p.id,
-                kind=p.kind,
-                name=p.name,
-                image=p.image,
-                social_media=p.social_media,
-                organization=p.organization,
-                fir_number=p.fir_number,
-                details=p.details,
-                active_status=p.active_status,
-                remarks=p.remarks,
-                info=p.info,
-                created_at=p.created_at.isoformat() if p.created_at else None,
-            )
-        )
+        matched_profiles.append(_profile_out_from_model(p))
 
     # Related profiles: supporters/followers for matched criminals (with remark)
     related_profiles: list[RelationOut] = []
@@ -377,4 +412,4 @@ def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: Se
             )
         )
 
-    return (matched_profiles, related_profiles)
+    return (matched_profiles, related_profiles, entity_profiles)

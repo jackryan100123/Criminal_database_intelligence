@@ -130,7 +130,7 @@ export default function AnalyticsPage() {
             nodes={net.nodes}
             links={net.links}
             height={520}
-            onSelectCriminal={(id) => navigate(`/criminal/${id}`)}
+            onSelectNode={(id, kind) => navigate(kind === "user" ? `/profile/${id}` : `/criminal/${id}`)}
           />
         ) : null}
       </section>

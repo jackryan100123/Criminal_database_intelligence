@@ -43,6 +43,11 @@ class Profile(Base):
     active_status = Column(Boolean, nullable=False, default=True, server_default="true")
     remarks = Column(Text, nullable=True)
 
+    # Person / entity contact (distinct from login User.email); used for analyst-facing records.
+    phone = Column(String(64), nullable=True)
+    email_contact = Column(String(255), nullable=True)
+    address = Column(Text, nullable=True)
+
     # Universal extra data field for all profiles (analyst can store anything).
     # Stored as JSON and indexed in Elasticsearch as `info`.
     info = Column(JSON, nullable=True)

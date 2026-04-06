@@ -39,6 +39,9 @@ class ProfileBase(BaseModel):
     kind: ProfileKind = "criminal"
     active_status: bool = True
     remarks: Optional[str] = None
+    phone: Optional[str] = None
+    email_contact: Optional[str] = None
+    address: Optional[str] = None
     # Universal extra data field for all profiles.
     # Example: {"alias": "X", "case_number": "12/2024", "location": "Chennai"}
     info: Optional[dict[str, Any]] = None
@@ -57,6 +60,9 @@ class ProfileUpdate(BaseModel):
     details: Optional[str] = None
     active_status: Optional[bool] = None
     remarks: Optional[str] = None
+    phone: Optional[str] = None
+    email_contact: Optional[str] = None
+    address: Optional[str] = None
     info: Optional[dict[str, Any]] = None
 
 
@@ -73,8 +79,31 @@ class ProfileOut(BaseModel):
     details: Optional[str] = None
     active_status: bool = True
     remarks: Optional[str] = None
+    phone: Optional[str] = None
+    email_contact: Optional[str] = None
+    address: Optional[str] = None
     info: Optional[dict[str, Any]] = None
     created_at: Optional[str] = None
+
+
+class LinkedToCriminalOut(BaseModel):
+    """This person (user entity) appears on these criminal files."""
+
+    link_id: str
+    criminal_profile_id: str
+    criminal_name: str
+    criminal_active: bool
+    role: LinkRole
+    remark: Optional[str] = None
+
+
+class ConvertToCriminalRequest(BaseModel):
+    """Promote a person/entity profile to a criminal record (same profile id, new investigation)."""
+
+    fir_number: str
+    organization: Optional[str] = None
+    details: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class LinkRequest(BaseModel):
@@ -123,6 +152,8 @@ class ProfilePhotoUpdate(BaseModel):
 class SearchResponse(BaseModel):
     profiles: list[ProfileOut]
     related_profiles: list[RelationOut]
+    # Direct Elasticsearch hits for person/entity (user) profiles — not only via criminal expansion.
+    entity_profiles: list[ProfileOut] = Field(default_factory=list)
 
 
 class ImageUploadRequest(BaseModel):

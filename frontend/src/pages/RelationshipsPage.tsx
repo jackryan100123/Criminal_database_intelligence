@@ -77,7 +77,9 @@ export default function RelationshipsPage() {
                         {r.linked_name}
                       </button>
                     ) : (
-                      <span>{r.linked_name}</span>
+                      <button type="button" className="text-link table-name-link" onClick={() => navigate(`/profile/${r.linked_profile_id}`)}>
+                        {r.linked_name}
+                      </button>
                     )}{" "}
                     <span className="pill subtle">{r.linked_kind}</span>
                   </td>
@@ -87,8 +89,13 @@ export default function RelationshipsPage() {
                   <td className="td-remark">{r.remark || "—"}</td>
                   <td>
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${r.criminal_profile_id}`)}>
-                      Criminal
+                      Criminal file
                     </button>
+                    {r.linked_kind === "user" ? (
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/profile/${r.linked_profile_id}`)}>
+                        Entity
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

@@ -88,6 +88,20 @@ export async function getProfile(profileId: string) {
   return apiFetch(`/profile/${profileId}`, { method: "GET" });
 }
 
+export async function getProfileLinkedToCriminals(profileId: string) {
+  return apiFetch(`/profile/${profileId}/linked-to-criminals`, { method: "GET" });
+}
+
+export async function convertProfileToCriminal(
+  profileId: string,
+  payload: { fir_number: string; organization?: string; details?: string; remarks?: string }
+) {
+  return apiFetch(`/profile/${profileId}/convert-to-criminal`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function linkProfile(
   criminalProfileId: string,
   followerId: string,

@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  convertProfileToCriminal,
   deleteProfile,
   deleteProfileLink,
   deleteProfilePhoto,
   getFollowers,
   getProfile,
+  getProfileLinkedToCriminals,
   getProfilePhotos,
   getSupporters,
   linkProfile,
@@ -29,7 +31,19 @@ type Profile = {
   details?: string | null;
   active_status: boolean;
   remarks?: string | null;
+  phone?: string | null;
+  email_contact?: string | null;
+  address?: string | null;
   info?: Record<string, any> | null;
+};
+
+type LinkedToCriminal = {
+  link_id: string;
+  criminal_profile_id: string;
+  criminal_name: string;
+  criminal_active: boolean;
+  role: "supporter" | "follower";
+  remark?: string | null;
 };
 
 type Relation = {
@@ -68,13 +82,14 @@ function infoRowsToObject(rows: InfoRow[]): Record<string, any> {
 export default function CriminalDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"basic" | "photos" | "relations" | "info">("basic");
+  const [tab, setTab] = useState<"basic" | "photos" | "relations" | "linked" | "info" | "convert">("basic");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [photos, setPhotos] = useState<any[]>([]);
   const [followers, setFollowers] = useState<Relation[]>([]);
   const [supporters, setSupporters] = useState<Relation[]>([]);
+  const [linkedCases, setLinkedCases] = useState<LinkedToCriminal[]>([]);
 
   const [editForm, setEditForm] = useState({
     name: "",
@@ -85,7 +100,18 @@ export default function CriminalDetailPage() {
     details: "",
     active_status: true,
     remarks: "",
+    phone: "",
+    email_contact: "",
+    address: "",
   });
+
+  const [convertForm, setConvertForm] = useState({
+    fir_number: "",
+    organization: "",
+    details: "",
+    remarks: "",
+  });
+  const [convertMsg, setConvertMsg] = useState("");
   const [editInfo, setEditInfo] = useState<InfoRow[]>([{ key: "", value: "" }]);
   const [editMsg, setEditMsg] = useState("");
 
@@ -105,14 +131,9 @@ export default function CriminalDetailPage() {
     if (!id) return;
     setLoading(true);
     setError("");
+    setConvertMsg("");
     try {
       const p = (await getProfile(id)) as Profile;
-      if (p.kind !== "criminal") {
-        setError("This profile is not a criminal record.");
-        setProfile(p);
-        setLoading(false);
-        return;
-      }
       setProfile(p);
       setEditForm({
         name: p.name ?? "",
@@ -123,24 +144,43 @@ export default function CriminalDetailPage() {
         details: p.details ?? "",
         active_status: p.active_status ?? true,
         remarks: p.remarks ?? "",
+        phone: p.phone ?? "",
+        email_contact: p.email_contact ?? "",
+        address: p.address ?? "",
       });
+      setConvertForm((cf) => ({
+        fir_number: "",
+        organization: p.organization ?? cf.organization ?? "",
+        details: p.details ?? cf.details ?? "",
+        remarks: p.remarks ?? cf.remarks ?? "",
+      }));
       const infoObj = p.info ?? {};
       const rows: InfoRow[] = Object.entries(infoObj).map(([k, v]) => ({ key: k, value: String(v ?? "") }));
       setEditInfo(rows.length ? rows : [{ key: "", value: "" }]);
 
       const photoRes = await getProfilePhotos(id);
       setPhotos(photoRes.photos ?? []);
-      const fr = await getFollowers(id);
-      const fol = fr.followers ?? [];
-      setFollowers(fol);
-      const sp = await getSupporters(id);
-      const sup = sp.supporters ?? [];
-      setSupporters(sup);
-      const drafts: Record<string, string> = {};
-      for (const r of [...fol, ...sup]) {
-        drafts[r.link_id] = r.remark ?? "";
+
+      if (p.kind === "criminal") {
+        const fr = await getFollowers(id);
+        const fol = fr.followers ?? [];
+        setFollowers(fol);
+        const sp = await getSupporters(id);
+        const sup = sp.supporters ?? [];
+        setSupporters(sup);
+        const drafts: Record<string, string> = {};
+        for (const r of [...fol, ...sup]) {
+          drafts[r.link_id] = r.remark ?? "";
+        }
+        setLinkRemarkDrafts(drafts);
+        setLinkedCases([]);
+      } else {
+        setFollowers([]);
+        setSupporters([]);
+        setLinkRemarkDrafts({});
+        const lk = await getProfileLinkedToCriminals(id);
+        setLinkedCases(lk.links ?? []);
       }
-      setLinkRemarkDrafts(drafts);
     } catch (e: any) {
       setError(e.message || "Failed to load profile");
     } finally {
@@ -151,6 +191,10 @@ export default function CriminalDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setTab("basic");
+  }, [id]);
 
   const saveProfile = async () => {
     if (!profile) return;
@@ -163,10 +207,13 @@ export default function CriminalDetailPage() {
         image: editForm.image || undefined,
         social_media: editForm.social_media || undefined,
         organization: editForm.organization || undefined,
-        fir_number: editForm.fir_number || undefined,
+        fir_number: profile.kind === "criminal" ? editForm.fir_number || undefined : undefined,
         details: editForm.details || undefined,
         active_status: editForm.active_status,
         remarks: editForm.remarks || undefined,
+        phone: editForm.phone || undefined,
+        email_contact: editForm.email_contact || undefined,
+        address: editForm.address || undefined,
         info: Object.keys(infoObj).length ? infoObj : undefined,
       });
       await updateProfile(profile.profile_id, payload);
@@ -177,8 +224,30 @@ export default function CriminalDetailPage() {
     }
   };
 
+  const doConvertToCriminal = async () => {
+    if (!id || !profile || profile.kind !== "user") return;
+    setError("");
+    setConvertMsg("");
+    const fir = convertForm.fir_number.trim();
+    if (!fir) {
+      setError("FIR number is required to open a criminal file.");
+      return;
+    }
+    try {
+      await convertProfileToCriminal(id, {
+        fir_number: fir,
+        organization: convertForm.organization.trim() || undefined,
+        details: convertForm.details.trim() || undefined,
+        remarks: convertForm.remarks.trim() || undefined,
+      });
+      navigate(`/criminal/${id}`, { replace: true });
+    } catch (e: any) {
+      setError(e.message || "Conversion failed");
+    }
+  };
+
   const removeProfile = async () => {
-    if (!id || !window.confirm("Delete this criminal profile permanently?")) return;
+    if (!id || !window.confirm("Delete this profile permanently? This cannot be undone.")) return;
     try {
       await deleteProfile(id);
       navigate("/profiles", { replace: true });
@@ -325,7 +394,7 @@ export default function CriminalDetailPage() {
           <div>
             <h2>{profile?.name ?? "Loading…"}</h2>
             <div className="profile-badges">
-              <span className="pill subtle">Criminal</span>
+              <span className="pill subtle">{profile?.kind === "criminal" ? "Criminal" : "Person / entity"}</span>
               {profile ? (
                 <span className={profile.active_status ? "status-pill on" : "status-pill off"}>
                   {profile.active_status ? "Active" : "Inactive"}
@@ -365,9 +434,20 @@ export default function CriminalDetailPage() {
         <button type="button" className={tab === "photos" ? "active" : ""} onClick={() => setTab("photos")}>
           Photos
         </button>
-        <button type="button" className={tab === "relations" ? "active" : ""} onClick={() => setTab("relations")}>
-          Supporters / followers
-        </button>
+        {profile?.kind === "criminal" ? (
+          <button type="button" className={tab === "relations" ? "active" : ""} onClick={() => setTab("relations")}>
+            Supporters / followers
+          </button>
+        ) : (
+          <>
+            <button type="button" className={tab === "linked" ? "active" : ""} onClick={() => setTab("linked")}>
+              Linked cases
+            </button>
+            <button type="button" className={tab === "convert" ? "active" : ""} onClick={() => setTab("convert")}>
+              Open criminal file
+            </button>
+          </>
+        )}
         <button type="button" className={tab === "info" ? "active" : ""} onClick={() => setTab("info")}>
           Additional info
         </button>
@@ -392,13 +472,35 @@ export default function CriminalDetailPage() {
                 <option value="false">No</option>
               </select>
             </label>
-            <label className="field">
-              <span>FIR number</span>
-              <input value={editForm.fir_number} onChange={(e) => setEditForm((p) => ({ ...p, fir_number: e.target.value }))} />
-            </label>
+            {profile.kind === "criminal" ? (
+              <label className="field">
+                <span>FIR number</span>
+                <input value={editForm.fir_number} onChange={(e) => setEditForm((p) => ({ ...p, fir_number: e.target.value }))} />
+              </label>
+            ) : (
+              <div className="field full">
+                <span className="muted small">This record is a person or entity, not a criminal file. Add a FIR under “Open criminal file” when an investigation is opened.</span>
+              </div>
+            )}
             <label className="field">
               <span>Organization</span>
               <input value={editForm.organization} onChange={(e) => setEditForm((p) => ({ ...p, organization: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Phone</span>
+              <input value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} placeholder="Contact number" />
+            </label>
+            <label className="field">
+              <span>Email (contact)</span>
+              <input
+                value={editForm.email_contact}
+                onChange={(e) => setEditForm((p) => ({ ...p, email_contact: e.target.value }))}
+                placeholder="Analyst-facing email"
+              />
+            </label>
+            <label className="field full">
+              <span>Address</span>
+              <textarea value={editForm.address} onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))} rows={2} />
             </label>
             <label className="field">
               <span>Social media</span>
@@ -462,7 +564,80 @@ export default function CriminalDetailPage() {
         </section>
       ) : null}
 
-      {!loading && profile && tab === "relations" ? (
+      {!loading && profile && profile.kind === "user" && tab === "linked" ? (
+        <section className="panel">
+          <p className="page-lead">Criminal files this person is linked to as a supporter or follower (with remarks from those files).</p>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Criminal file</th>
+                  <th>Role</th>
+                  <th>Remark</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {linkedCases.map((lc) => (
+                  <tr key={lc.link_id}>
+                    <td>
+                      <button type="button" className="text-link table-name-link" onClick={() => navigate(`/criminal/${lc.criminal_profile_id}`)}>
+                        {lc.criminal_name}
+                      </button>{" "}
+                      <span className={lc.criminal_active ? "status-pill on" : "status-pill off"}>{lc.criminal_active ? "Active" : "Inactive"}</span>
+                    </td>
+                    <td>
+                      <span className="pill subtle">{lc.role}</span>
+                    </td>
+                    <td className="td-remark">{lc.remark || "—"}</td>
+                    <td>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${lc.criminal_profile_id}`)}>
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {linkedCases.length === 0 ? <div className="empty-state">Not linked to any criminal file yet.</div> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {!loading && profile && profile.kind === "user" && tab === "convert" ? (
+        <section className="panel">
+          <h3>Open a criminal investigation for this person</h3>
+          <p className="page-lead">
+            The same profile id is kept; existing links to other criminal files stay intact. You must assign a unique FIR number for the new criminal file.
+          </p>
+          <div className="row grid-2">
+            <label className="field">
+              <span>FIR number</span>
+              <input value={convertForm.fir_number} onChange={(e) => setConvertForm((p) => ({ ...p, fir_number: e.target.value }))} placeholder="Required" />
+            </label>
+            <label className="field">
+              <span>Organization</span>
+              <input value={convertForm.organization} onChange={(e) => setConvertForm((p) => ({ ...p, organization: e.target.value }))} />
+            </label>
+            <label className="field full">
+              <span>Details</span>
+              <textarea value={convertForm.details} onChange={(e) => setConvertForm((p) => ({ ...p, details: e.target.value }))} rows={3} />
+            </label>
+            <label className="field full">
+              <span>Remarks</span>
+              <textarea value={convertForm.remarks} onChange={(e) => setConvertForm((p) => ({ ...p, remarks: e.target.value }))} rows={2} />
+            </label>
+          </div>
+          <div className="panel-toolbar">
+            <button type="button" className="btn btn-primary" onClick={() => void doConvertToCriminal()}>
+              Convert to criminal record
+            </button>
+            {convertMsg ? <span className="ok-text">{convertMsg}</span> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {!loading && profile && profile.kind === "criminal" && tab === "relations" ? (
         <div className="two-col">
           <section className="panel">
             <h3>Link entity</h3>
@@ -494,7 +669,16 @@ export default function CriminalDetailPage() {
               {supporters.map((r) => (
                 <div key={r.link_id} className="mini-card relation-card">
                   <div className="mini-title">
-                    {r.linked_name} <span className="pill subtle">{r.linked_kind}</span>
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() =>
+                        navigate(r.linked_kind === "user" ? `/profile/${r.linked_profile_id}` : `/criminal/${r.linked_profile_id}`)
+                      }
+                    >
+                      {r.linked_name}
+                    </button>{" "}
+                    <span className="pill subtle">{r.linked_kind}</span>
                   </div>
                   <label className="field mini-field">
                     <span>Remark</span>
@@ -522,7 +706,16 @@ export default function CriminalDetailPage() {
               {followers.map((r) => (
                 <div key={r.link_id} className="mini-card relation-card">
                   <div className="mini-title">
-                    {r.linked_name} <span className="pill subtle">{r.linked_kind}</span>
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() =>
+                        navigate(r.linked_kind === "user" ? `/profile/${r.linked_profile_id}` : `/criminal/${r.linked_profile_id}`)
+                      }
+                    >
+                      {r.linked_name}
+                    </button>{" "}
+                    <span className="pill subtle">{r.linked_kind}</span>
                   </div>
                   <label className="field mini-field">
                     <span>Remark</span>

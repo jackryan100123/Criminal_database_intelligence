@@ -19,6 +19,7 @@ export default function ProfilesPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<"list" | "create">("list");
+  const [directoryKind, setDirectoryKind] = useState<"criminal" | "user">("criminal");
 
   const [createPayload, setCreatePayload] = useState({
     kind: "criminal" as "criminal" | "user",
@@ -29,6 +30,9 @@ export default function ProfilesPage() {
     details: "",
     active_status: true,
     remarks: "",
+    phone: "",
+    email_contact: "",
+    address: "",
   });
   const [createInfo, setCreateInfo] = useState<InfoRow[]>([{ key: "", value: "" }]);
   const [msg, setMsg] = useState("");
@@ -36,7 +40,7 @@ export default function ProfilesPage() {
   const load = async () => {
     setErr("");
     try {
-      const res = await listProfiles({ kind: "criminal", limit: 100 });
+      const res = await listProfiles({ kind: directoryKind, limit: 100 });
       setRows(res.profiles ?? []);
     } catch (e: any) {
       setErr(e.message || "Failed to load profiles");
@@ -45,7 +49,7 @@ export default function ProfilesPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [directoryKind]);
 
   const doCreate = async () => {
     setErr("");
@@ -65,6 +69,9 @@ export default function ProfilesPage() {
         details: createPayload.details || undefined,
         active_status: createPayload.active_status,
         remarks: createPayload.remarks || undefined,
+        phone: createPayload.phone?.trim() || undefined,
+        email_contact: createPayload.email_contact?.trim() || undefined,
+        address: createPayload.address?.trim() || undefined,
         info: Object.keys(info).length ? info : undefined,
       };
       const res = await createProfile(payload);
@@ -79,8 +86,8 @@ export default function ProfilesPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Criminal profiles</h2>
-        <p className="page-lead">Browse criminals and create new entity records.</p>
+        <h2>Profiles</h2>
+        <p className="page-lead">Browse criminal files and person/entity records, or create new profiles.</p>
       </div>
       <div className="tabs">
         <button type="button" className={tab === "list" ? "active" : ""} onClick={() => setTab("list")}>
@@ -96,6 +103,14 @@ export default function ProfilesPage() {
       {tab === "list" ? (
         <section className="panel">
           <div className="panel-toolbar">
+            <div className="tabs" style={{ marginRight: "auto" }}>
+              <button type="button" className={directoryKind === "criminal" ? "active" : ""} onClick={() => setDirectoryKind("criminal")}>
+                Criminal files
+              </button>
+              <button type="button" className={directoryKind === "user" ? "active" : ""} onClick={() => setDirectoryKind("user")}>
+                People / entities
+              </button>
+            </div>
             <button type="button" className="btn btn-secondary" onClick={load}>
               Refresh
             </button>
@@ -105,7 +120,7 @@ export default function ProfilesPage() {
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>FIR</th>
+                  <th>{directoryKind === "criminal" ? "FIR" : "Phone"}</th>
                   <th>Organization</th>
                   <th>Status</th>
                   <th />
@@ -116,17 +131,21 @@ export default function ProfilesPage() {
                   <tr
                     key={p.profile_id}
                     className="table-row-click"
-                    onClick={() => navigate(`/criminal/${p.profile_id}`)}
-                    title="Open criminal profile"
+                    onClick={() => navigate(directoryKind === "user" ? `/profile/${p.profile_id}` : `/criminal/${p.profile_id}`)}
+                    title={directoryKind === "user" ? "Open person/entity profile" : "Open criminal profile"}
                   >
                     <td>{p.name}</td>
-                    <td>{p.fir_number || "—"}</td>
+                    <td>{directoryKind === "criminal" ? p.fir_number || "—" : p.phone || "—"}</td>
                     <td>{p.organization || "—"}</td>
                     <td>
                       <span className={p.active_status ? "status-pill on" : "status-pill off"}>{p.active_status ? "Active" : "Inactive"}</span>
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${p.profile_id}`)}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => navigate(directoryKind === "user" ? `/profile/${p.profile_id}` : `/criminal/${p.profile_id}`)}
+                      >
                         Open
                       </button>
                     </td>
@@ -134,7 +153,9 @@ export default function ProfilesPage() {
                 ))}
               </tbody>
             </table>
-            {rows.length === 0 ? <div className="empty-state">No criminal profiles yet.</div> : null}
+            {rows.length === 0 ? (
+              <div className="empty-state">{directoryKind === "criminal" ? "No criminal profiles yet." : "No person/entity profiles yet."}</div>
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -193,6 +214,18 @@ export default function ProfilesPage() {
             <label className="field full">
               <span>Remarks</span>
               <input value={createPayload.remarks} onChange={(e) => setCreatePayload((p) => ({ ...p, remarks: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Phone</span>
+              <input value={createPayload.phone} onChange={(e) => setCreatePayload((p) => ({ ...p, phone: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Email (contact)</span>
+              <input value={createPayload.email_contact} onChange={(e) => setCreatePayload((p) => ({ ...p, email_contact: e.target.value }))} />
+            </label>
+            <label className="field full">
+              <span>Address</span>
+              <textarea value={createPayload.address} onChange={(e) => setCreatePayload((p) => ({ ...p, address: e.target.value }))} rows={2} />
             </label>
           </div>
           <div className="subpanel">

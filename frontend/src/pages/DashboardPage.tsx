@@ -110,18 +110,30 @@ export default function DashboardPage() {
         <div className="activity-feed">
           {activity.length === 0 ? <div className="empty-state">No activity yet.</div> : null}
           {activity.map((ev, i) => {
-            const linkId = ev.criminal_profile_id || ev.profile_id;
+            const criminalId = ev.criminal_profile_id as string | undefined;
+            const profileId = ev.profile_id as string | undefined;
+            const linkedId = ev.linked_profile_id as string | undefined;
+            const openEntity = () => {
+              if (ev.type === "relationship_linked" && criminalId) {
+                navigate(`/criminal/${criminalId}`);
+                return;
+              }
+              if (profileId && ev.profile_kind === "user") {
+                navigate(`/profile/${profileId}`);
+                return;
+              }
+              if (profileId) {
+                navigate(`/criminal/${profileId}`);
+              }
+            };
+            const canOpen = Boolean((ev.type === "relationship_linked" && criminalId) || profileId);
             return (
               <div key={i} className="activity-item">
                 <div className={`activity-dot type-${ev.type}`} />
                 <div className="activity-body">
                   <div className="activity-title">
-                    {linkId ? (
-                      <button
-                        type="button"
-                        className="text-link activity-title-link"
-                        onClick={() => navigate(`/criminal/${linkId}`)}
-                      >
+                    {canOpen ? (
+                      <button type="button" className="text-link activity-title-link" onClick={openEntity}>
                         {ev.title}
                       </button>
                     ) : (
@@ -131,8 +143,8 @@ export default function DashboardPage() {
                   <div className="activity-meta">{ev.subtitle}</div>
                   <div className="activity-time">{formatActivityTime(ev.at)}</div>
                 </div>
-                {linkId ? (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${linkId}`)}>
+                {canOpen ? (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={openEntity}>
                     Open
                   </button>
                 ) : null}
