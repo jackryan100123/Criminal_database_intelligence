@@ -7,11 +7,11 @@ function titleForPath(pathname: string): string {
   if (pathname.startsWith("/criminal/")) return "Criminal record";
   if (pathname.startsWith("/profile/")) return "Person / entity profile";
   const map: Record<string, string> = {
-    "/": "Dashboard",
-    "/profiles": "Profiles",
-    "/search": "Search & filter",
-    "/relationships": "Supporters & followers",
-    "/analytics": "Analytics",
+    "/": "Investigation workspace",
+    "/profiles": "Case files & entities",
+    "/search": "Global search",
+    "/relationships": "Relationship links",
+    "/analytics": "Analytics & network",
     "/settings": "Settings",
   };
   return map[pathname] ?? "Workspace";
@@ -35,11 +35,11 @@ export default function AppShell() {
   };
 
   const nav = [
-    { to: "/", label: "Dashboard", end: true },
-    { to: "/profiles", label: "Profiles" },
-    { to: "/search", label: "Search & Filter" },
-    { to: "/relationships", label: "Supporters & Followers" },
-    { to: "/analytics", label: "Analytics" },
+    { to: "/", label: "Workspace", end: true },
+    { to: "/profiles", label: "Case files" },
+    { to: "/search", label: "Search" },
+    { to: "/relationships", label: "Links" },
+    { to: "/analytics", label: "Network" },
     { to: "/settings", label: "Settings" },
   ];
 

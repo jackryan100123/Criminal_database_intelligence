@@ -119,11 +119,12 @@ export default function SearchPage() {
 
   return (
     <div className="page search-page">
-      <div className="page-header">
-        <h2>Search &amp; filter</h2>
+      <div className="page-header search-hero">
+        <h2>Global search</h2>
         <p className="page-lead">
-          Search by part of a name or FIR (e.g. &quot;Tus&quot; finds &quot;Tushar&quot;), plus organization, details, remarks, social links, and custom info
-          fields. Narrow results with the filters below.
+          One index across <strong>criminal case files</strong>, <strong>person/entity profiles</strong>, contact fields, social handles, free-text details,
+          custom <code className="mono">info.*</code> keys, and <strong>relationship remarks</strong> (use the remark filter below). Partial names and FIR
+          fragments are supported.
         </p>
       </div>
 

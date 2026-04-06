@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { createProfile, listProfiles } from "../api";
 
 type InfoRow = { key: string; value: string };
@@ -16,6 +16,7 @@ function infoRowsToObject(rows: InfoRow[]): Record<string, any> {
 
 export default function ProfilesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [rows, setRows] = useState<any[]>([]);
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<"list" | "create">("list");
@@ -50,6 +51,11 @@ export default function ProfilesPage() {
   useEffect(() => {
     load();
   }, [directoryKind]);
+
+  useEffect(() => {
+    const k = (location.state as { directoryKind?: "criminal" | "user" } | null)?.directoryKind;
+    if (k === "criminal" || k === "user") setDirectoryKind(k);
+  }, [location.state]);
 
   const doCreate = async () => {
     setErr("");
@@ -86,8 +92,11 @@ export default function ProfilesPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h2>Profiles</h2>
-        <p className="page-lead">Browse criminal files and person/entity records, or create new profiles.</p>
+        <h2>Case files &amp; entities</h2>
+        <p className="page-lead">
+          Switch between <strong>criminal case files</strong> (FIR-based) and <strong>people / entities</strong> (supporters, followers, or standalone OSINT targets).
+          Create entities first, then link them from a case&apos;s <em>Case links</em> tab.
+        </p>
       </div>
       <div className="tabs">
         <button type="button" className={tab === "list" ? "active" : ""} onClick={() => setTab("list")}>

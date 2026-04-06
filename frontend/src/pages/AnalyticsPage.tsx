@@ -54,8 +54,11 @@ export default function AnalyticsPage() {
   return (
     <div className="page analytics-page">
       <div className="page-header">
-        <h2>Analytics &amp; network</h2>
-        <p className="page-lead">Relationship distribution, top-linked criminals, and an interactive network graph.</p>
+        <h2>Analytics &amp; link network</h2>
+        <p className="page-lead">
+          Charts summarize volume; the <strong>force-directed graph</strong> shows how criminal files connect to people/entities. Use <strong>Fit view</strong> after
+          panning, and click nodes to open records.
+        </p>
       </div>
       {err ? <div className="alert alert-error">{err}</div> : null}
 
@@ -122,8 +125,8 @@ export default function AnalyticsPage() {
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Network graph</h3>
-          <span className="pill subtle">Pan · zoom · drag nodes</span>
+          <h3>Interactive network</h3>
+          <span className="pill subtle">Drag · zoom · hover links</span>
         </div>
         {net ? (
           <NetworkGraph

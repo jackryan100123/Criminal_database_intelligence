@@ -59,6 +59,12 @@ type Relation = {
 
 type InfoRow = { key: string; value: string };
 
+function truncate(s: string, n: number) {
+  const t = s.trim();
+  if (t.length <= n) return t;
+  return `${t.slice(0, n)}…`;
+}
+
 function cleanObject(obj: Record<string, any>) {
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -416,8 +422,19 @@ export default function CriminalDetailPage() {
           </div>
         </div>
         <div className="profile-hero-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => navigate("/search")}>
-            Back to search
+          <button type="button" className="btn btn-secondary" onClick={() => navigate("/")}>
+            Workspace
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate("/search", { state: { initialQuery: profile?.name?.trim() || "" } })}
+            disabled={!profile?.name?.trim()}
+          >
+            Search similar
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate("/analytics")}>
+            Network graph
           </button>
           <button type="button" className="btn btn-danger-outline" onClick={removeProfile}>
             Delete
@@ -426,6 +443,56 @@ export default function CriminalDetailPage() {
       </div>
 
       {error ? <div className="alert alert-error">{error}</div> : null}
+
+      {!loading && profile?.kind === "criminal" ? (
+        <div className="investigation-strip">
+          <div className="strip-item">
+            <div className="strip-label">FIR</div>
+            <div className="strip-value mono">{profile.fir_number || "—"}</div>
+          </div>
+          <div className="strip-item">
+            <div className="strip-label">Organization</div>
+            <div className="strip-value">{profile.organization || "—"}</div>
+          </div>
+          <div className="strip-item">
+            <div className="strip-label">Social / OSINT</div>
+            <div className="strip-value mono">{profile.social_media ? truncate(profile.social_media, 42) : "—"}</div>
+          </div>
+          <div className="strip-item">
+            <div className="strip-label">Supporters</div>
+            <div className="strip-value">{supporters.length}</div>
+          </div>
+          <div className="strip-item">
+            <div className="strip-label">Followers</div>
+            <div className="strip-value">{followers.length}</div>
+          </div>
+          <div className="strip-item">
+            <div className="strip-label">Photos</div>
+            <div className="strip-value">{photos.length}</div>
+          </div>
+        </div>
+      ) : null}
+
+      {!loading && profile?.kind === "user" ? (
+        <div className="investigation-strip">
+          <div className="strip-item">
+            <div className="strip-label">Phone</div>
+            <div className="strip-value">{profile.phone || "—"}</div>
+          </div>
+          <div className="strip-item">
+            <div className="strip-label">Email</div>
+            <div className="strip-value">{profile.email_contact || "—"}</div>
+          </div>
+          <div className="strip-item">
+            <div className="strip-label">Social / OSINT</div>
+            <div className="strip-value mono">{profile.social_media ? truncate(profile.social_media, 42) : "—"}</div>
+          </div>
+          <div className="strip-item">
+            <div className="strip-label">Linked case files</div>
+            <div className="strip-value">{linkedCases.length}</div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="tabs underline">
         <button type="button" className={tab === "basic" ? "active" : ""} onClick={() => setTab("basic")}>
@@ -436,7 +503,7 @@ export default function CriminalDetailPage() {
         </button>
         {profile?.kind === "criminal" ? (
           <button type="button" className={tab === "relations" ? "active" : ""} onClick={() => setTab("relations")}>
-            Supporters / followers
+            Case links
           </button>
         ) : (
           <>
@@ -638,13 +705,27 @@ export default function CriminalDetailPage() {
       ) : null}
 
       {!loading && profile && profile.kind === "criminal" && tab === "relations" ? (
-        <div className="two-col">
+        <>
+          <p className="relations-intro">
+            <strong>Link graph.</strong> Attach a person/entity profile to this case as a <span className="pill-role supporter">supporter</span> or{" "}
+            <span className="pill-role follower">follower</span>. Remarks are <strong>searchable</strong> from Global search (relationship remark filter).
+            Open any linked name to manage that entity&apos;s full profile (contact, social, photos).
+          </p>
+          <div className="two-col">
           <section className="panel">
-            <h3>Link entity</h3>
+            <h3>Add link</h3>
+            <p className="muted small" style={{ marginTop: 0 }}>
+              Paste the target profile UUID (from Case files → People, or Search). Create the entity first if it does not exist.
+            </p>
             <div className="row grid-2">
               <label className="field">
-                <span>Linked profile ID</span>
-                <input value={linkForm.follower_id} onChange={(e) => setLinkForm((p) => ({ ...p, follower_id: e.target.value }))} />
+                <span>Target profile ID</span>
+                <input
+                  value={linkForm.follower_id}
+                  onChange={(e) => setLinkForm((p) => ({ ...p, follower_id: e.target.value }))}
+                  placeholder="UUID of person/entity profile"
+                  className="mono"
+                />
               </label>
               <label className="field">
                 <span>Role</span>
@@ -654,17 +735,21 @@ export default function CriminalDetailPage() {
                 </select>
               </label>
               <label className="field full">
-                <span>Remark</span>
-                <input value={linkForm.remark} onChange={(e) => setLinkForm((p) => ({ ...p, remark: e.target.value }))} />
+                <span>Investigative remark</span>
+                <input
+                  value={linkForm.remark}
+                  onChange={(e) => setLinkForm((p) => ({ ...p, remark: e.target.value }))}
+                  placeholder="How they tie to this case (searchable)"
+                />
               </label>
             </div>
             <button type="button" className="btn btn-primary" onClick={doLink}>
-              Add relationship
+              Add link
             </button>
             {linkMsg ? <div className="alert alert-info">{linkMsg}</div> : null}
           </section>
           <section className="panel">
-            <h3>Supporters</h3>
+            <h3>Supporters ({supporters.length})</h3>
             <div className="card-list dense">
               {supporters.map((r) => (
                 <div key={r.link_id} className="mini-card relation-card">
@@ -701,7 +786,7 @@ export default function CriminalDetailPage() {
             </div>
           </section>
           <section className="panel">
-            <h3>Followers</h3>
+            <h3>Followers ({followers.length})</h3>
             <div className="card-list dense">
               {followers.map((r) => (
                 <div key={r.link_id} className="mini-card relation-card">
@@ -738,6 +823,7 @@ export default function CriminalDetailPage() {
             </div>
           </section>
         </div>
+        </>
       ) : null}
 
       {!loading && profile && tab === "info" ? (

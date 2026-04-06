@@ -45,19 +45,36 @@ export default function DashboardPage() {
   return (
     <div className="page dashboard-page">
       <div className="page-header">
-        <h2>Operations dashboard</h2>
-        <p className="page-lead">Monitor entity counts, recent activity, and launch global search.</p>
+        <h2>Investigation workspace</h2>
+        <p className="page-lead">
+          Build criminal case files, attach OSINT (social, photos, notes), link supporters and followers, and search across everything—including relationship remarks.
+        </p>
       </div>
 
       {err ? <div className="alert alert-error">{err}</div> : null}
 
+      <div className="workflow-strip">
+        <span className="workflow-chip">
+          <strong>1</strong> Case file
+        </span>
+        <span className="workflow-chip">
+          <strong>2</strong> Links &amp; remarks
+        </span>
+        <span className="workflow-chip">
+          <strong>3</strong> Entity profiles
+        </span>
+        <span className="workflow-chip">
+          <strong>4</strong> Search &amp; graph
+        </span>
+      </div>
+
       <section className="panel hero-search">
         <div className="hero-search-inner">
-          <label className="hero-label">Global search</label>
+          <label className="hero-label">Global search (names, FIR, phone, remarks, social, custom fields)</label>
           <div className="hero-search-row">
             <input
               className="hero-input"
-              placeholder="Name, FIR, organization, remarks, or jump to advanced filters…"
+              placeholder="Try a name fragment, FIR, org, phone, or paste a social handle…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && goSearch()}
@@ -72,47 +89,68 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      <div className="dashboard-actions">
+        <button type="button" className="btn btn-secondary" onClick={() => navigate("/profiles", { state: { directoryKind: "criminal" } })}>
+          Browse case files
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={() => navigate("/profiles", { state: { directoryKind: "user" } })}>
+          People &amp; entities
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={() => navigate("/relationships")}>
+          All relationship links
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={() => navigate("/analytics")}>
+          Network graph
+        </button>
+      </div>
+
       <section className="stats-grid">
         <button type="button" className="stat-card clickable" onClick={() => navigate("/profiles")}>
-          <div className="stat-label">Active criminals</div>
+          <div className="stat-label">Active criminal files</div>
           <div className="stat-value accent">{stats?.active_criminals ?? "—"}</div>
           <div className="stat-hint">of {stats?.total_criminals ?? "—"} total</div>
         </button>
         <button type="button" className="stat-card clickable" onClick={() => navigate("/relationships")}>
           <div className="stat-label">Supporter links</div>
           <div className="stat-value">{stats?.supporter_links ?? "—"}</div>
+          <div className="stat-hint">Edges to entities</div>
         </button>
         <button type="button" className="stat-card clickable" onClick={() => navigate("/relationships")}>
           <div className="stat-label">Follower links</div>
           <div className="stat-value">{stats?.follower_links ?? "—"}</div>
+          <div className="stat-hint">Edges to entities</div>
         </button>
         <div className="stat-card">
-          <div className="stat-label">Relationship links</div>
+          <div className="stat-label">Total link edges</div>
           <div className="stat-value">{stats?.total_relationship_links ?? "—"}</div>
-          <div className="stat-hint">All supporter + follower edges</div>
+          <div className="stat-hint">Indexed for search</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Photos on file</div>
+          <div className="stat-label">Photos in vault</div>
           <div className="stat-value">{stats?.total_photos ?? "—"}</div>
+          <div className="stat-hint">With analysis notes</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-label">User profiles</div>
+        <button
+          type="button"
+          className="stat-card clickable"
+          onClick={() => navigate("/profiles", { state: { directoryKind: "user" } })}
+        >
+          <div className="stat-label">Person / entity profiles</div>
           <div className="stat-value">{stats?.total_user_profiles ?? "—"}</div>
-          <div className="stat-hint">Non-criminal entities</div>
-        </div>
+          <div className="stat-hint">Non-criminal records</div>
+        </button>
       </section>
 
       <section className="panel">
         <div className="panel-header">
           <h3>Recent activity</h3>
-          <span className="pill subtle">Latest updates</span>
+          <span className="pill subtle">Latest changes</span>
         </div>
         <div className="activity-feed">
           {activity.length === 0 ? <div className="empty-state">No activity yet.</div> : null}
           {activity.map((ev, i) => {
             const criminalId = ev.criminal_profile_id as string | undefined;
             const profileId = ev.profile_id as string | undefined;
-            const linkedId = ev.linked_profile_id as string | undefined;
             const openEntity = () => {
               if (ev.type === "relationship_linked" && criminalId) {
                 navigate(`/criminal/${criminalId}`);

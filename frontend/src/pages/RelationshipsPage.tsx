@@ -24,10 +24,13 @@ export default function RelationshipsPage() {
   }, []);
 
   return (
-    <div className="page">
+    <div className="page relationships-page">
       <div className="page-header">
-        <h2>Supporters &amp; followers</h2>
-        <p className="page-lead">All relationship edges with remarks and quick navigation to criminal profiles.</p>
+        <h2>Relationship links</h2>
+        <p className="page-lead">
+          Every supporter/follower edge with investigative remarks. Open the <strong>criminal file</strong> to edit links in context, or the <strong>entity</strong>{" "}
+          profile to update contact and OSINT.
+        </p>
       </div>
       <section className="panel">
         <div className="row grid-3">
@@ -84,7 +87,7 @@ export default function RelationshipsPage() {
                     <span className="pill subtle">{r.linked_kind}</span>
                   </td>
                   <td>
-                    <span className="pill subtle">{r.role}</span>
+                    <span className={`pill-role ${r.role === "supporter" ? "supporter" : "follower"}`}>{r.role}</span>
                   </td>
                   <td className="td-remark">{r.remark || "—"}</td>
                   <td>
