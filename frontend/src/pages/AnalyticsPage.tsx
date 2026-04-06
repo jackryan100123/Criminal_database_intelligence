@@ -133,7 +133,7 @@ export default function AnalyticsPage() {
           <NetworkGraph
             nodes={net.nodes}
             links={net.links}
-            height={520}
+            height={580}
             onSelectNode={(id, kind) => navigate(kind === "user" ? entityProfilePath(id) : criminalProfilePath(id))}
           />
         ) : null}

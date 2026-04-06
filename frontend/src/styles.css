@@ -1138,6 +1138,36 @@ textarea {
   background: rgba(96, 165, 250, 0.75);
 }
 
+/* Network graph v2 (orange criminal nodes, distinct edge colors) */
+.legend-dot--criminal {
+  background: linear-gradient(145deg, #fb923c, #ea580c);
+  box-shadow: 0 0 0 2px rgba(253, 186, 116, 0.35);
+}
+
+.legend-dot--entity {
+  background: #475569;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.25);
+}
+
+.legend-line--supporter {
+  background: linear-gradient(90deg, #10b981, #34d399);
+  height: 4px;
+}
+
+.legend-line--follower {
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  height: 4px;
+}
+
+.network-graph-legend--v2 {
+  gap: 16px 22px;
+  font-size: 13px;
+}
+
+.network-graph-wrap--v2 {
+  min-height: 480px;
+}
+
 .network-graph-actions {
   display: flex;
   flex-wrap: wrap;
