@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import NetworkGraph from "../components/NetworkGraph";
 import { getAnalyticsNetwork, getDashboardStats, getTopCriminals } from "../api";
+import { criminalProfilePath, entityProfilePath } from "../paths";
 
 const COLORS = ["#34d399", "#60a5fa", "#fbbf24", "#f87171", "#a78bfa", "#2dd4bf"];
 
@@ -103,7 +104,7 @@ export default function AnalyticsPage() {
                   cursor="pointer"
                   onClick={(d: any) => {
                     const id = d?.payload?.criminal_profile_id ?? d?.criminal_profile_id;
-                    if (id) navigate(`/criminal/${id}`);
+                    if (id) navigate(criminalProfilePath(id));
                   }}
                 />
                 <Bar
@@ -114,7 +115,7 @@ export default function AnalyticsPage() {
                   cursor="pointer"
                   onClick={(d: any) => {
                     const id = d?.payload?.criminal_profile_id ?? d?.criminal_profile_id;
-                    if (id) navigate(`/criminal/${id}`);
+                    if (id) navigate(criminalProfilePath(id));
                   }}
                 />
               </BarChart>
@@ -133,7 +134,7 @@ export default function AnalyticsPage() {
             nodes={net.nodes}
             links={net.links}
             height={520}
-            onSelectNode={(id, kind) => navigate(kind === "user" ? `/profile/${id}` : `/criminal/${id}`)}
+            onSelectNode={(id, kind) => navigate(kind === "user" ? entityProfilePath(id) : criminalProfilePath(id))}
           />
         ) : null}
       </section>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDashboardActivity, getDashboardStats } from "../api";
+import { criminalProfilePath, entityProfilePath } from "../paths";
 
 function formatActivityTime(iso: string | undefined | null): string {
   if (!iso) return "";
@@ -153,15 +154,15 @@ export default function DashboardPage() {
             const profileId = ev.profile_id as string | undefined;
             const openEntity = () => {
               if (ev.type === "relationship_linked" && criminalId) {
-                navigate(`/criminal/${criminalId}`);
+                navigate(criminalProfilePath(criminalId));
                 return;
               }
               if (profileId && ev.profile_kind === "user") {
-                navigate(`/profile/${profileId}`);
+                navigate(entityProfilePath(profileId));
                 return;
               }
               if (profileId) {
-                navigate(`/criminal/${profileId}`);
+                navigate(criminalProfilePath(profileId));
               }
             };
             const canOpen = Boolean((ev.type === "relationship_linked" && criminalId) || profileId);

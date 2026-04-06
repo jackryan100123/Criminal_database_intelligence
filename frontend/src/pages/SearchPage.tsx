@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { searchProfiles } from "../api";
+import { criminalProfilePath, entityProfilePath } from "../paths";
 
 type InfoRow = { key: string; value: string };
 
@@ -242,7 +243,7 @@ export default function SearchPage() {
             </div>
             <div className="card-list">
               {(result.profiles ?? []).map((p: any) => (
-                <button key={p.profile_id} type="button" className="result-card" onClick={() => navigate(`/criminal/${p.profile_id}`)}>
+                <button key={p.profile_id} type="button" className="result-card" onClick={() => navigate(criminalProfilePath(p.profile_id))}>
                   <div className="result-title">{p.name}</div>
                   <div className="result-meta">
                     FIR {p.fir_number || "—"} · {p.organization || "—"} ·{" "}
@@ -268,7 +269,7 @@ export default function SearchPage() {
             </div>
             <div className="card-list">
               {(result.entity_profiles ?? []).map((p: any) => (
-                <button key={p.profile_id} type="button" className="result-card" onClick={() => navigate(`/profile/${p.profile_id}`)}>
+                <button key={p.profile_id} type="button" className="result-card" onClick={() => navigate(entityProfilePath(p.profile_id))}>
                   <div className="result-title">{p.name}</div>
                   <div className="result-meta">
                     {p.phone || "—"} · {p.email_contact || "—"} ·{" "}
@@ -294,11 +295,11 @@ export default function SearchPage() {
                 <div key={r.link_id} className="mini-card">
                   <div className="mini-title">
                     {r.linked_kind === "criminal" ? (
-                      <button type="button" className="text-link" onClick={() => navigate(`/criminal/${r.linked_profile_id}`)}>
+                      <button type="button" className="text-link" onClick={() => navigate(criminalProfilePath(r.linked_profile_id))}>
                         {r.linked_name}
                       </button>
                     ) : (
-                      <button type="button" className="text-link" onClick={() => navigate(`/profile/${r.linked_profile_id}`)}>
+                      <button type="button" className="text-link" onClick={() => navigate(entityProfilePath(r.linked_profile_id))}>
                         {r.linked_name}
                       </button>
                     )}{" "}
@@ -306,7 +307,7 @@ export default function SearchPage() {
                   </div>
                   <div className="mini-meta">
                     Criminal:{" "}
-                    <button type="button" className="text-link" onClick={() => navigate(`/criminal/${r.criminal_profile_id}`)}>
+                    <button type="button" className="text-link" onClick={() => navigate(criminalProfilePath(r.criminal_profile_id))}>
                       open profile
                     </button>
                   </div>

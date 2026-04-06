@@ -29,6 +29,7 @@ export default function App() {
         <Route path="/relationships" element={<RelationshipsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/criminal/:id" element={<CriminalDetailPage />} />
+        <Route path="/entity/:id" element={<CriminalDetailPage />} />
         <Route path="/profile/:id" element={<CriminalDetailPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { criminalProfilePath, entityProfilePath } from "../paths";
 import {
   convertProfileToCriminal,
   deleteProfile,
@@ -88,6 +89,7 @@ function infoRowsToObject(rows: InfoRow[]): Record<string, any> {
 export default function CriminalDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [tab, setTab] = useState<"basic" | "photos" | "relations" | "linked" | "info" | "convert">("basic");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -202,6 +204,24 @@ export default function CriminalDetailPage() {
     setTab("basic");
   }, [id]);
 
+  /** Canonical URLs: `/entity/:id` for users, `/criminal/:id` for case files. Legacy `/profile/:id` redirects. */
+  useEffect(() => {
+    if (!id || !profile || loading) return;
+    if (profile.profile_id !== id) return;
+    const path = location.pathname;
+    if (profile.kind === "criminal") {
+      if (path.startsWith("/entity/") || path.startsWith("/profile/")) {
+        navigate(criminalProfilePath(id), { replace: true });
+      }
+    } else {
+      if (path.startsWith("/criminal/")) {
+        navigate(entityProfilePath(id), { replace: true });
+      } else if (path.startsWith("/profile/")) {
+        navigate(entityProfilePath(id), { replace: true });
+      }
+    }
+  }, [id, profile, loading, location.pathname, navigate]);
+
   const saveProfile = async () => {
     if (!profile) return;
     setError("");
@@ -246,7 +266,7 @@ export default function CriminalDetailPage() {
         details: convertForm.details.trim() || undefined,
         remarks: convertForm.remarks.trim() || undefined,
       });
-      navigate(`/criminal/${id}`, { replace: true });
+      navigate(criminalProfilePath(id), { replace: true });
     } catch (e: any) {
       setError(e.message || "Conversion failed");
     }
@@ -256,7 +276,7 @@ export default function CriminalDetailPage() {
     if (!id || !window.confirm("Delete this profile permanently? This cannot be undone.")) return;
     try {
       await deleteProfile(id);
-      navigate("/profiles", { replace: true });
+      navigate("/profiles", { replace: true, state: { directoryKind: profile?.kind === "user" ? "user" : "criminal" } });
     } catch (e: any) {
       setError(e.message || "Delete failed");
     }
@@ -386,11 +406,14 @@ export default function CriminalDetailPage() {
     window.setTimeout(() => setIdCopied(false), 2000);
   };
 
+  const isEntityRecord = profile?.kind === "user";
+  const pageClass = isEntityRecord ? "page entity-profile" : "page criminal-detail";
+
   return (
-    <div className="page criminal-detail">
+    <div className={pageClass}>
       <div className="profile-hero">
         <div className="profile-hero-main">
-          <div className="avatar-lg">
+          <div className={`avatar-lg ${isEntityRecord ? "avatar-entity" : ""}`}>
             {profile?.image ? (
               <img src={resolveUploadUrl(profile.image)} alt="" />
             ) : (
@@ -399,8 +422,13 @@ export default function CriminalDetailPage() {
           </div>
           <div>
             <h2>{profile?.name ?? "Loading…"}</h2>
+            {isEntityRecord ? (
+              <p className="profile-subtitle muted">Person / entity — manage contact &amp; OSINT; link from case files or mark as criminal when warranted.</p>
+            ) : (
+              <p className="profile-subtitle muted">Criminal case file — FIR, case links, photos, and investigation notes.</p>
+            )}
             <div className="profile-badges">
-              <span className="pill subtle">{profile?.kind === "criminal" ? "Criminal" : "Person / entity"}</span>
+              <span className="pill subtle">{profile?.kind === "criminal" ? "Criminal case" : "Person / entity"}</span>
               {profile ? (
                 <span className={profile.active_status ? "status-pill on" : "status-pill off"}>
                   {profile.active_status ? "Active" : "Inactive"}
@@ -511,7 +539,7 @@ export default function CriminalDetailPage() {
               Linked cases
             </button>
             <button type="button" className={tab === "convert" ? "active" : ""} onClick={() => setTab("convert")}>
-              Open criminal file
+              Mark as criminal
             </button>
           </>
         )}
@@ -546,7 +574,7 @@ export default function CriminalDetailPage() {
               </label>
             ) : (
               <div className="field full">
-                <span className="muted small">This record is a person or entity, not a criminal file. Add a FIR under “Open criminal file” when an investigation is opened.</span>
+                <span className="muted small">This record is a person or entity. When you open a formal case, use <strong>Mark as criminal</strong> and assign a FIR.</span>
               </div>
             )}
             <label className="field">
@@ -648,7 +676,7 @@ export default function CriminalDetailPage() {
                 {linkedCases.map((lc) => (
                   <tr key={lc.link_id}>
                     <td>
-                      <button type="button" className="text-link table-name-link" onClick={() => navigate(`/criminal/${lc.criminal_profile_id}`)}>
+                      <button type="button" className="text-link table-name-link" onClick={() => navigate(criminalProfilePath(lc.criminal_profile_id))}>
                         {lc.criminal_name}
                       </button>{" "}
                       <span className={lc.criminal_active ? "status-pill on" : "status-pill off"}>{lc.criminal_active ? "Active" : "Inactive"}</span>
@@ -658,7 +686,7 @@ export default function CriminalDetailPage() {
                     </td>
                     <td className="td-remark">{lc.remark || "—"}</td>
                     <td>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${lc.criminal_profile_id}`)}>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(criminalProfilePath(lc.criminal_profile_id))}>
                         Open
                       </button>
                     </td>
@@ -672,10 +700,11 @@ export default function CriminalDetailPage() {
       ) : null}
 
       {!loading && profile && profile.kind === "user" && tab === "convert" ? (
-        <section className="panel">
-          <h3>Open a criminal investigation for this person</h3>
+        <section className="panel panel-emphasis">
+          <h3>Mark as criminal case file</h3>
           <p className="page-lead">
-            The same profile id is kept; existing links to other criminal files stay intact. You must assign a unique FIR number for the new criminal file.
+            Promotes this person/entity to a <strong>criminal case file</strong> (same profile id). Existing supporter/follower links to other cases are unchanged.
+            Assign a <strong>unique FIR</strong>.
           </p>
           <div className="row grid-2">
             <label className="field">
@@ -697,7 +726,7 @@ export default function CriminalDetailPage() {
           </div>
           <div className="panel-toolbar">
             <button type="button" className="btn btn-primary" onClick={() => void doConvertToCriminal()}>
-              Convert to criminal record
+              Mark as criminal &amp; save
             </button>
             {convertMsg ? <span className="ok-text">{convertMsg}</span> : null}
           </div>
@@ -758,7 +787,7 @@ export default function CriminalDetailPage() {
                       type="button"
                       className="text-link"
                       onClick={() =>
-                        navigate(r.linked_kind === "user" ? `/profile/${r.linked_profile_id}` : `/criminal/${r.linked_profile_id}`)
+                        navigate(r.linked_kind === "user" ? entityProfilePath(r.linked_profile_id) : criminalProfilePath(r.linked_profile_id))
                       }
                     >
                       {r.linked_name}
@@ -795,7 +824,7 @@ export default function CriminalDetailPage() {
                       type="button"
                       className="text-link"
                       onClick={() =>
-                        navigate(r.linked_kind === "user" ? `/profile/${r.linked_profile_id}` : `/criminal/${r.linked_profile_id}`)
+                        navigate(r.linked_kind === "user" ? entityProfilePath(r.linked_profile_id) : criminalProfilePath(r.linked_profile_id))
                       }
                     >
                       {r.linked_name}

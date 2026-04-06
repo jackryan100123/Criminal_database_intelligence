@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { createProfile, listProfiles } from "../api";
+import { criminalProfilePath, entityProfilePath } from "../paths";
 
 type InfoRow = { key: string; value: string };
 
@@ -19,11 +20,10 @@ export default function ProfilesPage() {
   const location = useLocation();
   const [rows, setRows] = useState<any[]>([]);
   const [err, setErr] = useState("");
-  const [tab, setTab] = useState<"list" | "create">("list");
+  const [tab, setTab] = useState<"list" | "newCriminal" | "newEntity">("list");
   const [directoryKind, setDirectoryKind] = useState<"criminal" | "user">("criminal");
 
-  const [createPayload, setCreatePayload] = useState({
-    kind: "criminal" as "criminal" | "user",
+  const [criminalForm, setCriminalForm] = useState({
     name: "",
     organization: "",
     social_media: "",
@@ -35,7 +35,19 @@ export default function ProfilesPage() {
     email_contact: "",
     address: "",
   });
-  const [createInfo, setCreateInfo] = useState<InfoRow[]>([{ key: "", value: "" }]);
+  const [entityForm, setEntityForm] = useState({
+    name: "",
+    organization: "",
+    social_media: "",
+    details: "",
+    active_status: true,
+    remarks: "",
+    phone: "",
+    email_contact: "",
+    address: "",
+  });
+  const [createInfoCriminal, setCreateInfoCriminal] = useState<InfoRow[]>([{ key: "", value: "" }]);
+  const [createInfoEntity, setCreateInfoEntity] = useState<InfoRow[]>([{ key: "", value: "" }]);
   const [msg, setMsg] = useState("");
 
   const load = async () => {
@@ -57,33 +69,62 @@ export default function ProfilesPage() {
     if (k === "criminal" || k === "user") setDirectoryKind(k);
   }, [location.state]);
 
-  const doCreate = async () => {
+  const doCreateCriminal = async () => {
     setErr("");
     setMsg("");
-    if (!createPayload.name.trim()) {
+    if (!criminalForm.name.trim()) {
       setErr("Name is required.");
       return;
     }
     try {
-      const info = infoRowsToObject(createInfo);
+      const info = infoRowsToObject(createInfoCriminal);
       const payload: any = {
-        kind: createPayload.kind,
-        name: createPayload.name.trim(),
-        organization: createPayload.organization || undefined,
-        social_media: createPayload.social_media || undefined,
-        fir_number: createPayload.kind === "criminal" ? createPayload.fir_number || undefined : undefined,
-        details: createPayload.details || undefined,
-        active_status: createPayload.active_status,
-        remarks: createPayload.remarks || undefined,
-        phone: createPayload.phone?.trim() || undefined,
-        email_contact: createPayload.email_contact?.trim() || undefined,
-        address: createPayload.address?.trim() || undefined,
+        kind: "criminal",
+        name: criminalForm.name.trim(),
+        organization: criminalForm.organization || undefined,
+        social_media: criminalForm.social_media || undefined,
+        fir_number: criminalForm.fir_number || undefined,
+        details: criminalForm.details || undefined,
+        active_status: criminalForm.active_status,
+        remarks: criminalForm.remarks || undefined,
+        phone: criminalForm.phone?.trim() || undefined,
+        email_contact: criminalForm.email_contact?.trim() || undefined,
+        address: criminalForm.address?.trim() || undefined,
         info: Object.keys(info).length ? info : undefined,
       };
       const res = await createProfile(payload);
-      setMsg(`Created profile ${res.profile_id}`);
-      setTab("list");
-      await load();
+      setMsg("Criminal case file created.");
+      navigate(criminalProfilePath(res.profile_id));
+    } catch (e: any) {
+      setErr(e.message || "Create failed");
+    }
+  };
+
+  const doCreateEntity = async () => {
+    setErr("");
+    setMsg("");
+    if (!entityForm.name.trim()) {
+      setErr("Name is required.");
+      return;
+    }
+    try {
+      const info = infoRowsToObject(createInfoEntity);
+      const payload: any = {
+        kind: "user",
+        name: entityForm.name.trim(),
+        organization: entityForm.organization || undefined,
+        social_media: entityForm.social_media || undefined,
+        details: entityForm.details || undefined,
+        active_status: entityForm.active_status,
+        remarks: entityForm.remarks || undefined,
+        phone: entityForm.phone?.trim() || undefined,
+        email_contact: entityForm.email_contact?.trim() || undefined,
+        address: entityForm.address?.trim() || undefined,
+        info: Object.keys(info).length ? info : undefined,
+      };
+      const res = await createProfile(payload);
+      setMsg("Person / entity profile created.");
+      navigate(entityProfilePath(res.profile_id));
     } catch (e: any) {
       setErr(e.message || "Create failed");
     }
@@ -94,16 +135,19 @@ export default function ProfilesPage() {
       <div className="page-header">
         <h2>Case files &amp; entities</h2>
         <p className="page-lead">
-          Switch between <strong>criminal case files</strong> (FIR-based) and <strong>people / entities</strong> (supporters, followers, or standalone OSINT targets).
-          Create entities first, then link them from a case&apos;s <em>Case links</em> tab.
+          <strong>Criminal case files</strong> are FIR-based records with case links. <strong>People / entities</strong> are separate profiles for supporters,
+          followers, or OSINT targets — open them at <code className="mono">/entity/…</code>, then link from a case or mark as criminal when needed.
         </p>
       </div>
       <div className="tabs">
         <button type="button" className={tab === "list" ? "active" : ""} onClick={() => setTab("list")}>
           Directory
         </button>
-        <button type="button" className={tab === "create" ? "active" : ""} onClick={() => setTab("create")}>
-          New profile
+        <button type="button" className={tab === "newCriminal" ? "active" : ""} onClick={() => setTab("newCriminal")}>
+          New criminal case
+        </button>
+        <button type="button" className={tab === "newEntity" ? "active" : ""} onClick={() => setTab("newEntity")}>
+          New person / entity
         </button>
       </div>
       {err ? <div className="alert alert-error">{err}</div> : null}
@@ -114,7 +158,7 @@ export default function ProfilesPage() {
           <div className="panel-toolbar">
             <div className="tabs" style={{ marginRight: "auto" }}>
               <button type="button" className={directoryKind === "criminal" ? "active" : ""} onClick={() => setDirectoryKind("criminal")}>
-                Criminal files
+                Criminal case files
               </button>
               <button type="button" className={directoryKind === "user" ? "active" : ""} onClick={() => setDirectoryKind("user")}>
                 People / entities
@@ -140,8 +184,8 @@ export default function ProfilesPage() {
                   <tr
                     key={p.profile_id}
                     className="table-row-click"
-                    onClick={() => navigate(directoryKind === "user" ? `/profile/${p.profile_id}` : `/criminal/${p.profile_id}`)}
-                    title={directoryKind === "user" ? "Open person/entity profile" : "Open criminal profile"}
+                    onClick={() => navigate(directoryKind === "user" ? entityProfilePath(p.profile_id) : criminalProfilePath(p.profile_id))}
+                    title={directoryKind === "user" ? "Open person/entity profile" : "Open criminal case file"}
                   >
                     <td>{p.name}</td>
                     <td>{directoryKind === "criminal" ? p.fir_number || "—" : p.phone || "—"}</td>
@@ -153,7 +197,7 @@ export default function ProfilesPage() {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        onClick={() => navigate(directoryKind === "user" ? `/profile/${p.profile_id}` : `/criminal/${p.profile_id}`)}
+                        onClick={() => navigate(directoryKind === "user" ? entityProfilePath(p.profile_id) : criminalProfilePath(p.profile_id))}
                       >
                         Open
                       </button>
@@ -163,113 +207,199 @@ export default function ProfilesPage() {
               </tbody>
             </table>
             {rows.length === 0 ? (
-              <div className="empty-state">{directoryKind === "criminal" ? "No criminal profiles yet." : "No person/entity profiles yet."}</div>
+              <div className="empty-state">{directoryKind === "criminal" ? "No criminal case files yet." : "No person/entity profiles yet."}</div>
             ) : null}
           </div>
         </section>
       ) : null}
 
-      {tab === "create" ? (
+      {tab === "newCriminal" ? (
         <section className="panel">
-          <h3>New profile</h3>
+          <h3>New criminal case file</h3>
+          <p className="page-lead muted" style={{ marginTop: 0 }}>
+            Creates a <strong>criminal</strong> record (requires a unique FIR when filing). Opens the case page when saved.
+          </p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void doCreate();
+              void doCreateCriminal();
             }}
           >
-          <div className="row grid-2">
-            <label className="field">
-              <span>Kind</span>
-              <select value={createPayload.kind} onChange={(e) => setCreatePayload((p) => ({ ...p, kind: e.target.value as any }))}>
-                <option value="criminal">Criminal</option>
-                <option value="user">User / entity</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Name</span>
-              <input value={createPayload.name} onChange={(e) => setCreatePayload((p) => ({ ...p, name: e.target.value }))} />
-            </label>
-            <label className="field">
-              <span>Organization</span>
-              <input value={createPayload.organization} onChange={(e) => setCreatePayload((p) => ({ ...p, organization: e.target.value }))} />
-            </label>
-            <label className="field">
-              <span>Social media</span>
-              <input value={createPayload.social_media} onChange={(e) => setCreatePayload((p) => ({ ...p, social_media: e.target.value }))} />
-            </label>
-            <label className="field">
-              <span>FIR (criminal)</span>
-              <input
-                value={createPayload.fir_number}
-                onChange={(e) => setCreatePayload((p) => ({ ...p, fir_number: e.target.value }))}
-                disabled={createPayload.kind !== "criminal"}
-              />
-            </label>
-            <label className="field">
-              <span>Active</span>
-              <select
-                value={createPayload.active_status ? "true" : "false"}
-                onChange={(e) => setCreatePayload((p) => ({ ...p, active_status: e.target.value === "true" }))}
-              >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
-              </select>
-            </label>
-            <label className="field full">
-              <span>Details</span>
-              <textarea value={createPayload.details} onChange={(e) => setCreatePayload((p) => ({ ...p, details: e.target.value }))} />
-            </label>
-            <label className="field full">
-              <span>Remarks</span>
-              <input value={createPayload.remarks} onChange={(e) => setCreatePayload((p) => ({ ...p, remarks: e.target.value }))} />
-            </label>
-            <label className="field">
-              <span>Phone</span>
-              <input value={createPayload.phone} onChange={(e) => setCreatePayload((p) => ({ ...p, phone: e.target.value }))} />
-            </label>
-            <label className="field">
-              <span>Email (contact)</span>
-              <input value={createPayload.email_contact} onChange={(e) => setCreatePayload((p) => ({ ...p, email_contact: e.target.value }))} />
-            </label>
-            <label className="field full">
-              <span>Address</span>
-              <textarea value={createPayload.address} onChange={(e) => setCreatePayload((p) => ({ ...p, address: e.target.value }))} rows={2} />
-            </label>
-          </div>
-          <div className="subpanel">
-            <div className="subpanel-title">Additional info</div>
-            {createInfo.map((r, idx) => (
-              <div className="row grid-2 kv-row" key={idx}>
-                <input
-                  placeholder="key"
-                  value={r.key}
-                  onChange={(e) => {
-                    const n = [...createInfo];
-                    n[idx] = { ...n[idx], key: e.target.value };
-                    setCreateInfo(n);
-                  }}
-                />
-                <input
-                  placeholder="value"
-                  value={r.value}
-                  onChange={(e) => {
-                    const n = [...createInfo];
-                    n[idx] = { ...n[idx], value: e.target.value };
-                    setCreateInfo(n);
-                  }}
-                />
-              </div>
-            ))}
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCreateInfo((p) => [...p, { key: "", value: "" }])}>
-              + Field
-            </button>
-          </div>
-          <div className="panel-toolbar">
-            <button type="submit" className="btn btn-primary">
-              Create profile
-            </button>
-          </div>
+            <div className="row grid-2">
+              <label className="field">
+                <span>Name</span>
+                <input value={criminalForm.name} onChange={(e) => setCriminalForm((p) => ({ ...p, name: e.target.value }))} required />
+              </label>
+              <label className="field">
+                <span>FIR number</span>
+                <input value={criminalForm.fir_number} onChange={(e) => setCriminalForm((p) => ({ ...p, fir_number: e.target.value }))} placeholder="Unique case FIR" />
+              </label>
+              <label className="field">
+                <span>Organization</span>
+                <input value={criminalForm.organization} onChange={(e) => setCriminalForm((p) => ({ ...p, organization: e.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Social media / OSINT</span>
+                <input value={criminalForm.social_media} onChange={(e) => setCriminalForm((p) => ({ ...p, social_media: e.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Phone</span>
+                <input value={criminalForm.phone} onChange={(e) => setCriminalForm((p) => ({ ...p, phone: e.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Email (contact)</span>
+                <input value={criminalForm.email_contact} onChange={(e) => setCriminalForm((p) => ({ ...p, email_contact: e.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Active</span>
+                <select
+                  value={criminalForm.active_status ? "true" : "false"}
+                  onChange={(e) => setCriminalForm((p) => ({ ...p, active_status: e.target.value === "true" }))}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </label>
+              <label className="field full">
+                <span>Address</span>
+                <textarea value={criminalForm.address} onChange={(e) => setCriminalForm((p) => ({ ...p, address: e.target.value }))} rows={2} />
+              </label>
+              <label className="field full">
+                <span>Details</span>
+                <textarea value={criminalForm.details} onChange={(e) => setCriminalForm((p) => ({ ...p, details: e.target.value }))} />
+              </label>
+              <label className="field full">
+                <span>Remarks</span>
+                <input value={criminalForm.remarks} onChange={(e) => setCriminalForm((p) => ({ ...p, remarks: e.target.value }))} />
+              </label>
+            </div>
+            <div className="subpanel">
+              <div className="subpanel-title">Additional info (searchable)</div>
+              {createInfoCriminal.map((r, idx) => (
+                <div className="row grid-2 kv-row" key={idx}>
+                  <input
+                    placeholder="key"
+                    value={r.key}
+                    onChange={(e) => {
+                      const n = [...createInfoCriminal];
+                      n[idx] = { ...n[idx], key: e.target.value };
+                      setCreateInfoCriminal(n);
+                    }}
+                  />
+                  <input
+                    placeholder="value"
+                    value={r.value}
+                    onChange={(e) => {
+                      const n = [...createInfoCriminal];
+                      n[idx] = { ...n[idx], value: e.target.value };
+                      setCreateInfoCriminal(n);
+                    }}
+                  />
+                </div>
+              ))}
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCreateInfoCriminal((p) => [...p, { key: "", value: "" }])}>
+                + Field
+              </button>
+            </div>
+            <div className="panel-toolbar">
+              <button type="submit" className="btn btn-primary">
+                Create case file
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
+      {tab === "newEntity" ? (
+        <section className="panel">
+          <h3>New person / entity profile</h3>
+          <p className="page-lead muted" style={{ marginTop: 0 }}>
+            Creates a <strong>non-criminal</strong> record for supporters, followers, or standalone targets. Link it from a case file&apos;s <em>Case links</em> tab,
+            or use <strong>Mark as criminal</strong> on the entity page later.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void doCreateEntity();
+            }}
+          >
+            <div className="row grid-2">
+              <label className="field">
+                <span>Name</span>
+                <input value={entityForm.name} onChange={(e) => setEntityForm((p) => ({ ...p, name: e.target.value }))} required />
+              </label>
+              <label className="field">
+                <span>Organization</span>
+                <input value={entityForm.organization} onChange={(e) => setEntityForm((p) => ({ ...p, organization: e.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Phone</span>
+                <input value={entityForm.phone} onChange={(e) => setEntityForm((p) => ({ ...p, phone: e.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Email (contact)</span>
+                <input value={entityForm.email_contact} onChange={(e) => setEntityForm((p) => ({ ...p, email_contact: e.target.value }))} />
+              </label>
+              <label className="field full">
+                <span>Address</span>
+                <textarea value={entityForm.address} onChange={(e) => setEntityForm((p) => ({ ...p, address: e.target.value }))} rows={2} />
+              </label>
+              <label className="field">
+                <span>Social media / OSINT</span>
+                <input value={entityForm.social_media} onChange={(e) => setEntityForm((p) => ({ ...p, social_media: e.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Active</span>
+                <select
+                  value={entityForm.active_status ? "true" : "false"}
+                  onChange={(e) => setEntityForm((p) => ({ ...p, active_status: e.target.value === "true" }))}
+                >
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </label>
+              <label className="field full">
+                <span>Details</span>
+                <textarea value={entityForm.details} onChange={(e) => setEntityForm((p) => ({ ...p, details: e.target.value }))} />
+              </label>
+              <label className="field full">
+                <span>Remarks</span>
+                <input value={entityForm.remarks} onChange={(e) => setEntityForm((p) => ({ ...p, remarks: e.target.value }))} />
+              </label>
+            </div>
+            <div className="subpanel">
+              <div className="subpanel-title">Additional info (searchable)</div>
+              {createInfoEntity.map((r, idx) => (
+                <div className="row grid-2 kv-row" key={idx}>
+                  <input
+                    placeholder="key"
+                    value={r.key}
+                    onChange={(e) => {
+                      const n = [...createInfoEntity];
+                      n[idx] = { ...n[idx], key: e.target.value };
+                      setCreateInfoEntity(n);
+                    }}
+                  />
+                  <input
+                    placeholder="value"
+                    value={r.value}
+                    onChange={(e) => {
+                      const n = [...createInfoEntity];
+                      n[idx] = { ...n[idx], value: e.target.value };
+                      setCreateInfoEntity(n);
+                    }}
+                  />
+                </div>
+              ))}
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCreateInfoEntity((p) => [...p, { key: "", value: "" }])}>
+                + Field
+              </button>
+            </div>
+            <div className="panel-toolbar">
+              <button type="submit" className="btn btn-primary">
+                Create entity profile
+              </button>
+            </div>
           </form>
         </section>
       ) : null}

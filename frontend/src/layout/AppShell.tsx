@@ -4,7 +4,8 @@ import { logout } from "../api";
 import { useTheme } from "../theme/ThemeContext";
 
 function titleForPath(pathname: string): string {
-  if (pathname.startsWith("/criminal/")) return "Criminal record";
+  if (pathname.startsWith("/criminal/")) return "Criminal case file";
+  if (pathname.startsWith("/entity/")) return "Person / entity profile";
   if (pathname.startsWith("/profile/")) return "Person / entity profile";
   const map: Record<string, string> = {
     "/": "Investigation workspace",

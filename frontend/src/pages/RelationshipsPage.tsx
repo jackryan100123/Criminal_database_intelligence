@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getRelationships } from "../api";
+import { criminalProfilePath, entityProfilePath } from "../paths";
 
 export default function RelationshipsPage() {
   const navigate = useNavigate();
@@ -69,18 +70,18 @@ export default function RelationshipsPage() {
               {rows.map((r) => (
                 <tr key={r.link_id}>
                   <td>
-                    <button type="button" className="text-link table-name-link" onClick={() => navigate(`/criminal/${r.criminal_profile_id}`)}>
+                    <button type="button" className="text-link table-name-link" onClick={() => navigate(criminalProfilePath(r.criminal_profile_id))}>
                       {r.criminal_name}
                     </button>{" "}
                     <span className={r.criminal_active ? "status-pill on" : "status-pill off"}>{r.criminal_active ? "Active" : "Inactive"}</span>
                   </td>
                   <td>
                     {r.linked_kind === "criminal" ? (
-                      <button type="button" className="text-link table-name-link" onClick={() => navigate(`/criminal/${r.linked_profile_id}`)}>
+                      <button type="button" className="text-link table-name-link" onClick={() => navigate(criminalProfilePath(r.linked_profile_id))}>
                         {r.linked_name}
                       </button>
                     ) : (
-                      <button type="button" className="text-link table-name-link" onClick={() => navigate(`/profile/${r.linked_profile_id}`)}>
+                      <button type="button" className="text-link table-name-link" onClick={() => navigate(entityProfilePath(r.linked_profile_id))}>
                         {r.linked_name}
                       </button>
                     )}{" "}
@@ -91,11 +92,11 @@ export default function RelationshipsPage() {
                   </td>
                   <td className="td-remark">{r.remark || "—"}</td>
                   <td>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${r.criminal_profile_id}`)}>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(criminalProfilePath(r.criminal_profile_id))}>
                       Criminal file
                     </button>
                     {r.linked_kind === "user" ? (
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/profile/${r.linked_profile_id}`)}>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(entityProfilePath(r.linked_profile_id))}>
                         Entity
                       </button>
                     ) : null}
