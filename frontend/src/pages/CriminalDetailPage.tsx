@@ -99,6 +99,7 @@ export default function CriminalDetailPage() {
     image_url: string;
     analysis_notes: string | null;
   } | null>(null);
+  const [idCopied, setIdCopied] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -290,6 +291,26 @@ export default function CriminalDetailPage() {
 
   if (!id) return <div className="empty-state">Missing profile id.</div>;
 
+  const copyProfileId = async () => {
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = id;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(ta);
+      }
+    }
+    setIdCopied(true);
+    window.setTimeout(() => setIdCopied(false), 2000);
+  };
+
   return (
     <div className="page criminal-detail">
       <div className="profile-hero">
@@ -310,7 +331,18 @@ export default function CriminalDetailPage() {
                   {profile.active_status ? "Active" : "Inactive"}
                 </span>
               ) : null}
-              <span className="pill subtle mono">{id}</span>
+              <span className="profile-id-wrap">
+                <span className="pill subtle mono">{id}</span>
+                <button
+                  type="button"
+                  className="btn-copy-id"
+                  onClick={() => void copyProfileId()}
+                  title="Copy profile ID to clipboard"
+                  aria-label="Copy profile ID to clipboard"
+                >
+                  {idCopied ? "Copied" : "Copy"}
+                </button>
+              </span>
             </div>
           </div>
         </div>
