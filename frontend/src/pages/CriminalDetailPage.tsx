@@ -294,7 +294,13 @@ export default function CriminalDetailPage() {
     <div className="page criminal-detail">
       <div className="profile-hero">
         <div className="profile-hero-main">
-          <div className="avatar-lg">{profile?.name?.slice(0, 1)?.toUpperCase() ?? "?"}</div>
+          <div className="avatar-lg">
+            {profile?.image ? (
+              <img src={resolveUploadUrl(profile.image)} alt="" />
+            ) : (
+              profile?.name?.slice(0, 1)?.toUpperCase() ?? "?"
+            )}
+          </div>
           <div>
             <h2>{profile?.name ?? "Loading…"}</h2>
             <div className="profile-badges">

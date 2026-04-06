@@ -1,12 +1,27 @@
-import React, { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { logout } from "../api";
 import { useTheme } from "../theme/ThemeContext";
+
+function titleForPath(pathname: string): string {
+  if (pathname.startsWith("/criminal/")) return "Criminal record";
+  const map: Record<string, string> = {
+    "/": "Dashboard",
+    "/profiles": "Criminal profiles",
+    "/search": "Search & filter",
+    "/relationships": "Supporters & followers",
+    "/analytics": "Analytics",
+    "/settings": "Settings",
+  };
+  return map[pathname] ?? "Workspace";
+}
 
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const pageTitle = useMemo(() => titleForPath(location.pathname), [location.pathname]);
 
   const doLogout = async () => {
     try {
@@ -61,7 +76,7 @@ export default function AppShell() {
       <div className="main-area">
         <header className="topbar">
           <div className="topbar-left">
-            <h1 className="page-title">Workspace</h1>
+            <h1 className="page-title">{pageTitle}</h1>
           </div>
           <div className="topbar-actions">
             <button type="button" className="btn btn-ghost" onClick={toggleTheme}>

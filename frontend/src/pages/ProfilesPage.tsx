@@ -50,11 +50,15 @@ export default function ProfilesPage() {
   const doCreate = async () => {
     setErr("");
     setMsg("");
+    if (!createPayload.name.trim()) {
+      setErr("Name is required.");
+      return;
+    }
     try {
       const info = infoRowsToObject(createInfo);
       const payload: any = {
         kind: createPayload.kind,
-        name: createPayload.name,
+        name: createPayload.name.trim(),
         organization: createPayload.organization || undefined,
         social_media: createPayload.social_media || undefined,
         fir_number: createPayload.kind === "criminal" ? createPayload.fir_number || undefined : undefined,
@@ -138,6 +142,12 @@ export default function ProfilesPage() {
       {tab === "create" ? (
         <section className="panel">
           <h3>New profile</h3>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void doCreate();
+            }}
+          >
           <div className="row grid-2">
             <label className="field">
               <span>Kind</span>
@@ -214,10 +224,11 @@ export default function ProfilesPage() {
             </button>
           </div>
           <div className="panel-toolbar">
-            <button type="button" className="btn btn-primary" onClick={doCreate}>
+            <button type="submit" className="btn btn-primary">
               Create profile
             </button>
           </div>
+          </form>
         </section>
       ) : null}
     </div>

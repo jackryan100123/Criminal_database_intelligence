@@ -25,7 +25,8 @@ class ElasticsearchProfilesStore:
                 "properties": {
                     "id": {"type": "keyword"},
                     "kind": {"type": "keyword"},
-                    "name": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
+                    # Prefix / typeahead: subfields _2gram, _3gram, _index_prefix for partial name search (e.g. "Tus" → "Tushar").
+                    "name": {"type": "search_as_you_type", "max_shingle_size": 3},
                     "organization": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
                     "details": {"type": "text"},
                     "active_status": {"type": "boolean"},

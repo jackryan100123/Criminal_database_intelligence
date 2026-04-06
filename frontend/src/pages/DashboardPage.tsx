@@ -2,6 +2,17 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDashboardActivity, getDashboardStats } from "../api";
 
+function formatActivityTime(iso: string | undefined | null): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [stats, setStats] = useState<any>(null);
@@ -98,38 +109,36 @@ export default function DashboardPage() {
         </div>
         <div className="activity-feed">
           {activity.length === 0 ? <div className="empty-state">No activity yet.</div> : null}
-          {activity.map((ev, i) => (
-            <div key={i} className="activity-item">
-              <div className={`activity-dot type-${ev.type}`} />
-              <div className="activity-body">
-                <div className="activity-title">
-                  {ev.profile_id || ev.criminal_profile_id ? (
-                    <button
-                      type="button"
-                      className="text-link activity-title-link"
-                      onClick={() => navigate(`/criminal/${ev.profile_id || ev.criminal_profile_id}`)}
-                    >
-                      {ev.title}
-                    </button>
-                  ) : (
-                    ev.title
-                  )}
+          {activity.map((ev, i) => {
+            const linkId = ev.criminal_profile_id || ev.profile_id;
+            return (
+              <div key={i} className="activity-item">
+                <div className={`activity-dot type-${ev.type}`} />
+                <div className="activity-body">
+                  <div className="activity-title">
+                    {linkId ? (
+                      <button
+                        type="button"
+                        className="text-link activity-title-link"
+                        onClick={() => navigate(`/criminal/${linkId}`)}
+                      >
+                        {ev.title}
+                      </button>
+                    ) : (
+                      ev.title
+                    )}
+                  </div>
+                  <div className="activity-meta">{ev.subtitle}</div>
+                  <div className="activity-time">{formatActivityTime(ev.at)}</div>
                 </div>
-                <div className="activity-meta">{ev.subtitle}</div>
-                <div className="activity-time">{ev.at}</div>
+                {linkId ? (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${linkId}`)}>
+                    Open
+                  </button>
+                ) : null}
               </div>
-              {ev.profile_id ? (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${ev.profile_id}`)}>
-                  Open
-                </button>
-              ) : null}
-              {ev.criminal_profile_id ? (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${ev.criminal_profile_id}`)}>
-                  Criminal
-                </button>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>

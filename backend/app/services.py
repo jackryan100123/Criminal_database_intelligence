@@ -60,6 +60,10 @@ def _nonempty_str(value: Optional[str]) -> bool:
     return bool(str(value).strip())
 
 
+# Fields produced by Elasticsearch `search_as_you_type` on `name` (see es.py mapping).
+_NAME_PREFIX_FIELDS = ["name", "name._2gram", "name._3gram"]
+
+
 def _has_es_terms(params: SearchRequest) -> bool:
     return bool(
         (params.q or "").strip()
@@ -87,11 +91,20 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
             {
                 "bool": {
                     "should": [
+                        # Partial / prefix names (e.g. "Tus" finds "Tushar") — fuzzy whole-token match alone misses this.
+                        {
+                            "multi_match": {
+                                "query": q_global,
+                                "type": "bool_prefix",
+                                "fields": _NAME_PREFIX_FIELDS,
+                                "boost": 3.0,
+                            }
+                        },
                         {
                             "multi_match": {
                                 "query": q_global,
                                 "fields": [
-                                    "name^4",
+                                    "name^3",
                                     "organization^2",
                                     "details",
                                     "remarks",
@@ -102,7 +115,12 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
                                 "fuzziness": "AUTO",
                             }
                         },
-                        # Flattened `info` is a single field; `info.*` does not match mapping and yields no hits.
+                        {"match_bool_prefix": {"organization": {"query": q_global, "boost": 1.5}}},
+                        {"match_bool_prefix": {"details": {"query": q_global}}},
+                        {"match_bool_prefix": {"remarks": {"query": q_global}}},
+                        {"match_bool_prefix": {"fir_number": {"query": q_global}}},
+                        {"match_bool_prefix": {"social_media": {"query": q_global}}},
+                        # Flattened `info` is a single field.
                         {
                             "simple_query_string": {
                                 "query": q_global,
@@ -118,20 +136,38 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
         )
     else:
         if params.name:
-            should.append(
-                {
-                    "multi_match": {
-                        "query": params.name,
-                        "fields": ["name^4", "organization^2", "details", "remarks"],
-                        "type": "best_fields",
-                        "fuzziness": "AUTO",
+            nm = params.name.strip()
+            if nm:
+                should.append(
+                    {
+                        "multi_match": {
+                            "query": nm,
+                            "type": "bool_prefix",
+                            "fields": _NAME_PREFIX_FIELDS,
+                            "boost": 3.0,
+                        }
                     }
-                }
-            )
+                )
+                should.append(
+                    {
+                        "multi_match": {
+                            "query": nm,
+                            "fields": ["name^3", "organization^2", "details", "remarks"],
+                            "type": "best_fields",
+                            "fuzziness": "AUTO",
+                        }
+                    }
+                )
         if params.organization:
-            should.append({"match": {"organization": {"query": params.organization, "fuzziness": "AUTO"}}})
+            og = params.organization.strip()
+            if og:
+                should.append({"match_bool_prefix": {"organization": {"query": og}}})
+                should.append({"match": {"organization": {"query": og, "fuzziness": "AUTO"}}})
         if params.details:
-            should.append({"match": {"details": {"query": params.details, "fuzziness": "AUTO"}}})
+            dt = params.details.strip()
+            if dt:
+                should.append({"match_bool_prefix": {"details": {"query": dt}}})
+                should.append({"match": {"details": {"query": dt, "fuzziness": "AUTO"}}})
 
     if params.social_media:
         filters.append(

@@ -47,25 +47,32 @@ export default function LoginPage() {
             Register
           </button>
         </div>
-        {mode === "register" ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
+          {mode === "register" ? (
+            <label className="field">
+              <span>Email</span>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+            </label>
+          ) : null}
           <label className="field">
-            <span>Email</span>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+            <span>Username</span>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
           </label>
-        ) : null}
-        <label className="field">
-          <span>Username</span>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
-        </label>
-        <label className="field">
-          <span>Password</span>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
-        </label>
-        {error ? <div className="alert alert-error">{error}</div> : null}
-        {info ? <div className="alert alert-info">{info}</div> : null}
-        <button type="button" className="btn btn-primary btn-block" onClick={submit}>
-          {mode === "login" ? "Sign in" : "Create account"}
-        </button>
+          <label className="field">
+            <span>Password</span>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+          </label>
+          {error ? <div className="alert alert-error">{error}</div> : null}
+          {info ? <div className="alert alert-info">{info}</div> : null}
+          <button type="submit" className="btn btn-primary btn-block">
+            {mode === "login" ? "Sign in" : "Create account"}
+          </button>
+        </form>
       </div>
     </div>
   );

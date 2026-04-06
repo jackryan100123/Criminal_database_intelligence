@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { searchProfiles } from "../api";
 
@@ -81,7 +81,7 @@ export default function SearchPage() {
     };
   }, [location.key]);
 
-  const runSearch = async () => {
+  const runSearch = useCallback(async () => {
     setError("");
     setLoading(true);
     setResult(null);
@@ -107,6 +107,14 @@ export default function SearchPage() {
     } finally {
       setLoading(false);
     }
+  }, [searchBase]);
+
+  const onFiltersKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    const el = e.target as HTMLElement;
+    if (el.tagName === "TEXTAREA" || el.tagName === "BUTTON") return;
+    e.preventDefault();
+    void runSearch();
   };
 
   return (
@@ -114,8 +122,8 @@ export default function SearchPage() {
       <div className="page-header">
         <h2>Search &amp; filter</h2>
         <p className="page-lead">
-          Global fuzzy search (<code>q</code>) across names, FIR, organization, details, remarks, social, and indexed info fields. Use filters to narrow
-          further.
+          Search by part of a name or FIR (e.g. &quot;Tus&quot; finds &quot;Tushar&quot;), plus organization, details, remarks, social links, and custom info
+          fields. Narrow results with the filters below.
         </p>
       </div>
 
@@ -130,7 +138,7 @@ export default function SearchPage() {
         </div>
         {error ? <div className="alert alert-error">{error}</div> : null}
 
-        <div className={`filters ${filtersOpen ? "" : "collapsed"}`}>
+        <div className={`filters ${filtersOpen ? "" : "collapsed"}`} onKeyDown={onFiltersKeyDown}>
           <div className="row grid-2">
             <label className="field full">
               <span>Global query (fuzzy)</span>
@@ -241,7 +249,15 @@ export default function SearchPage() {
                   </div>
                 </button>
               ))}
-              {(result.profiles ?? []).length === 0 ? <div className="empty-state">No criminal profiles matched.</div> : null}
+              {(result.profiles ?? []).length === 0 ? (
+                <div className="empty-state">
+                  <p>No criminal profiles matched.</p>
+                  <p className="muted small">
+                    Try a shorter fragment of the name or FIR, clear strict filters (active status / role), or use the global query box above—partial words
+                    are supported.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </section>
           <section className="panel">
