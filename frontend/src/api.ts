@@ -4,8 +4,23 @@ type Json = any;
 // so the correct default is a relative URL prefix (empty string).
 const API_URL = (import.meta as any).env?.VITE_API_URL ?? "";
 
+/** Prefix for relative `/uploads/...` paths when served from the API origin. */
+export function resolveUploadUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return `${API_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 function getToken(): string | null {
   return localStorage.getItem("token");
+}
+
+function formatApiErrorDetail(data: any, fallback: string): string {
+  const raw = data?.detail ?? data?.message ?? fallback;
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) return raw.map((x: any) => (typeof x?.msg === "string" ? x.msg : JSON.stringify(x))).join("; ");
+  if (raw && typeof raw === "object") return JSON.stringify(raw);
+  return String(raw ?? fallback);
 }
 
 async function apiFetch(path: string, options: RequestInit = {}) {
@@ -26,8 +41,7 @@ async function apiFetch(path: string, options: RequestInit = {}) {
   const data = text ? JSON.parse(text) : null;
 
   if (!res.ok) {
-    const detail = data?.detail ?? data?.message ?? res.statusText;
-    throw new Error(detail);
+    throw new Error(formatApiErrorDetail(data, res.statusText));
   }
   return data as Json;
 }
@@ -94,6 +108,17 @@ export async function getSupporters(criminalProfileId: string) {
   return apiFetch(`/profile/${criminalProfileId}/supporters`, { method: "GET" });
 }
 
+export async function updateProfileLink(criminalProfileId: string, linkId: string, remark?: string) {
+  return apiFetch(`/profile/${criminalProfileId}/links/${linkId}`, {
+    method: "PUT",
+    body: JSON.stringify({ remark: remark ?? "" }),
+  });
+}
+
+export async function deleteProfileLink(criminalProfileId: string, linkId: string) {
+  return apiFetch(`/profile/${criminalProfileId}/links/${linkId}`, { method: "DELETE" });
+}
+
 export async function searchProfiles(payload: any) {
   return apiFetch("/search", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -116,14 +141,24 @@ export async function uploadProfilePhotos(profileId: string, files: FileList | F
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
-    const detail = data?.detail ?? data?.message ?? res.statusText;
-    throw new Error(detail);
+    throw new Error(formatApiErrorDetail(data, res.statusText));
   }
   return data;
 }
 
 export async function getProfilePhotos(profileId: string) {
   return apiFetch(`/profile/${profileId}/photos`, { method: "GET" });
+}
+
+export async function patchProfilePhoto(profileId: string, photoId: string, analysisNotes: string | null) {
+  return apiFetch(`/profile/${profileId}/photos/${photoId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ analysis_notes: analysisNotes }),
+  });
+}
+
+export async function deleteProfilePhoto(profileId: string, photoId: string) {
+  return apiFetch(`/profile/${profileId}/photos/${photoId}`, { method: "DELETE" });
 }
 
 export async function listProfiles(params?: { kind?: string; limit?: number; offset?: number }) {

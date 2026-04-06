@@ -8,9 +8,10 @@ type Props = {
   nodes: NetworkNode[];
   links: NetworkLink[];
   height?: number;
+  onSelectCriminal?: (criminalId: string) => void;
 };
 
-export default function NetworkGraph({ nodes, links, height = 420 }: Props) {
+export default function NetworkGraph({ nodes, links, height = 420, onSelectCriminal }: Props) {
   const graphData = useMemo(() => {
     const ns = nodes.map((n) => ({
       id: n.id,
@@ -38,6 +39,9 @@ export default function NetworkGraph({ nodes, links, height = 420 }: Props) {
         nodeColor={(n: any) =>
           n.kind === "criminal" ? (n.active === false ? "#f87171" : "#34d399") : "#94a3b8"
         }
+        onNodeClick={(n: any) => {
+          if (n?.kind === "criminal" && n?.id && onSelectCriminal) onSelectCriminal(String(n.id));
+        }}
         linkDirectionalArrowLength={4}
         linkDirectionalArrowRelPos={1}
         linkWidth={1}

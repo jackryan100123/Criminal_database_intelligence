@@ -109,14 +109,19 @@ export default function ProfilesPage() {
               </thead>
               <tbody>
                 {rows.map((p) => (
-                  <tr key={p.profile_id}>
+                  <tr
+                    key={p.profile_id}
+                    className="table-row-click"
+                    onClick={() => navigate(`/criminal/${p.profile_id}`)}
+                    title="Open criminal profile"
+                  >
                     <td>{p.name}</td>
                     <td>{p.fir_number || "—"}</td>
                     <td>{p.organization || "—"}</td>
                     <td>
                       <span className={p.active_status ? "status-pill on" : "status-pill off"}>{p.active_status ? "Active" : "Inactive"}</span>
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate(`/criminal/${p.profile_id}`)}>
                         Open
                       </button>

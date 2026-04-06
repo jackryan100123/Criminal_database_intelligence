@@ -1042,3 +1042,128 @@ textarea {
   font-size: 13px;
   color: var(--muted);
 }
+
+/* Inline navigation & photo preview */
+.text-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-link:hover {
+  color: var(--text);
+}
+
+.table-name-link {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.table-name-link:hover {
+  text-decoration: underline;
+}
+
+.table-row-click {
+  cursor: pointer;
+}
+
+.table-row-click:hover {
+  background: var(--panel-2);
+}
+
+.activity-title-link {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.activity-title-link:hover {
+  text-decoration: underline;
+}
+
+.photo-tile-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  text-align: left;
+}
+
+.relation-card .mini-field {
+  margin-top: 8px;
+}
+
+.relation-card .mini-field span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.relation-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(7, 11, 18, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-sheet {
+  width: min(720px, 100%);
+  max-height: min(92vh, 900px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.modal-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-sheet-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modal-preview-body {
+  padding: 16px 18px 20px;
+}
+
+.modal-preview-img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  margin-bottom: 14px;
+}
+
+.modal-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}

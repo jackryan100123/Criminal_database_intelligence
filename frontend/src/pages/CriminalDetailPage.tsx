@@ -2,12 +2,17 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   deleteProfile,
+  deleteProfileLink,
+  deleteProfilePhoto,
   getFollowers,
   getProfile,
   getProfilePhotos,
   getSupporters,
   linkProfile,
+  patchProfilePhoto,
+  resolveUploadUrl,
   updateProfile,
+  updateProfileLink,
   uploadProfilePhotos,
 } from "../api";
 
@@ -28,6 +33,7 @@ type Profile = {
 };
 
 type Relation = {
+  link_id: string;
   criminal_profile_id: string;
   linked_profile_id: string;
   linked_kind: ProfileKind;
@@ -87,6 +93,12 @@ export default function CriminalDetailPage() {
   const [linkMsg, setLinkMsg] = useState("");
 
   const [dragOver, setDragOver] = useState(false);
+  const [linkRemarkDrafts, setLinkRemarkDrafts] = useState<Record<string, string>>({});
+  const [photoPreview, setPhotoPreview] = useState<{
+    photo_id: string;
+    image_url: string;
+    analysis_notes: string | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -118,9 +130,16 @@ export default function CriminalDetailPage() {
       const photoRes = await getProfilePhotos(id);
       setPhotos(photoRes.photos ?? []);
       const fr = await getFollowers(id);
-      setFollowers(fr.followers ?? []);
+      const fol = fr.followers ?? [];
+      setFollowers(fol);
       const sp = await getSupporters(id);
-      setSupporters(sp.supporters ?? []);
+      const sup = sp.supporters ?? [];
+      setSupporters(sup);
+      const drafts: Record<string, string> = {};
+      for (const r of [...fol, ...sup]) {
+        drafts[r.link_id] = r.remark ?? "";
+      }
+      setLinkRemarkDrafts(drafts);
     } catch (e: any) {
       setError(e.message || "Failed to load profile");
     } finally {
@@ -190,8 +209,82 @@ export default function CriminalDetailPage() {
       setFollowers(fr.followers ?? []);
       const sp = await getSupporters(id);
       setSupporters(sp.supporters ?? []);
+      const drafts: Record<string, string> = {};
+      for (const r of [...(fr.followers ?? []), ...(sp.supporters ?? [])]) {
+        drafts[r.link_id] = r.remark ?? "";
+      }
+      setLinkRemarkDrafts(drafts);
     } catch (e: any) {
       setError(e.message || "Link failed");
+    }
+  };
+
+  const saveLinkRemark = async (linkId: string) => {
+    if (!id) return;
+    setError("");
+    try {
+      await updateProfileLink(id, linkId, linkRemarkDrafts[linkId] ?? "");
+      const fr = await getFollowers(id);
+      setFollowers(fr.followers ?? []);
+      const sp = await getSupporters(id);
+      setSupporters(sp.supporters ?? []);
+      setLinkMsg("Relationship updated.");
+    } catch (e: any) {
+      setError(e.message || "Update failed");
+    }
+  };
+
+  const removeLink = async (linkId: string) => {
+    if (!id || !window.confirm("Remove this relationship?")) return;
+    setError("");
+    try {
+      await deleteProfileLink(id, linkId);
+      const fr = await getFollowers(id);
+      setFollowers(fr.followers ?? []);
+      const sp = await getSupporters(id);
+      setSupporters(sp.supporters ?? []);
+      setLinkMsg("Relationship removed.");
+    } catch (e: any) {
+      setError(e.message || "Remove failed");
+    }
+  };
+
+  const openPhotoPreview = (p: { photo_id: string; image_url: string; analysis_notes?: string | null }) => {
+    setPhotoPreview({
+      photo_id: p.photo_id,
+      image_url: p.image_url,
+      analysis_notes: p.analysis_notes ?? null,
+    });
+  };
+
+  const savePhotoAnalysis = async () => {
+    if (!id || !photoPreview) return;
+    setError("");
+    try {
+      const updated = (await patchProfilePhoto(id, photoPreview.photo_id, photoPreview.analysis_notes)) as any;
+      const photoRes = await getProfilePhotos(id);
+      setPhotos(photoRes.photos ?? []);
+      setPhotoPreview({
+        photo_id: updated.photo_id,
+        image_url: updated.image_url,
+        analysis_notes: updated.analysis_notes ?? null,
+      });
+    } catch (e: any) {
+      setError(e.message || "Save failed");
+    }
+  };
+
+  const removePhoto = async () => {
+    if (!id || !photoPreview) return;
+    if (!window.confirm("Delete this photo from the file store?")) return;
+    setError("");
+    try {
+      await deleteProfilePhoto(id, photoPreview.photo_id);
+      const photoRes = await getProfilePhotos(id);
+      setPhotos(photoRes.photos ?? []);
+      setPhotoPreview(null);
+    } catch (e: any) {
+      setError(e.message || "Delete failed");
     }
   };
 
@@ -315,10 +408,16 @@ export default function CriminalDetailPage() {
           </div>
           <div className="photo-grid">
             {photos.map((p) => (
-              <div key={p.photo_id} className="photo-tile">
-                <img src={p.image_url} alt="" />
+              <button
+                key={p.photo_id}
+                type="button"
+                className="photo-tile photo-tile-btn"
+                onClick={() => openPhotoPreview(p)}
+                title="Preview &amp; analysis"
+              >
+                <img src={resolveUploadUrl(p.image_url)} alt="" />
                 <div className="photo-cap">{p.uploaded_at}</div>
-              </div>
+              </button>
             ))}
             {photos.length === 0 ? <div className="empty-state">No photos uploaded.</div> : null}
           </div>
@@ -355,11 +454,25 @@ export default function CriminalDetailPage() {
             <h3>Supporters</h3>
             <div className="card-list dense">
               {supporters.map((r) => (
-                <div key={r.linked_profile_id + "s"} className="mini-card">
+                <div key={r.link_id} className="mini-card relation-card">
                   <div className="mini-title">
                     {r.linked_name} <span className="pill subtle">{r.linked_kind}</span>
                   </div>
-                  {r.remark ? <div className="mini-remark">{r.remark}</div> : null}
+                  <label className="field mini-field">
+                    <span>Remark</span>
+                    <input
+                      value={linkRemarkDrafts[r.link_id] ?? ""}
+                      onChange={(e) => setLinkRemarkDrafts((d) => ({ ...d, [r.link_id]: e.target.value }))}
+                    />
+                  </label>
+                  <div className="relation-card-actions">
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => saveLinkRemark(r.link_id)}>
+                      Save
+                    </button>
+                    <button type="button" className="btn btn-danger-outline btn-sm" onClick={() => removeLink(r.link_id)}>
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
               {!supporters.length ? <div className="empty-state">None</div> : null}
@@ -369,11 +482,25 @@ export default function CriminalDetailPage() {
             <h3>Followers</h3>
             <div className="card-list dense">
               {followers.map((r) => (
-                <div key={r.linked_profile_id + "f"} className="mini-card">
+                <div key={r.link_id} className="mini-card relation-card">
                   <div className="mini-title">
                     {r.linked_name} <span className="pill subtle">{r.linked_kind}</span>
                   </div>
-                  {r.remark ? <div className="mini-remark">{r.remark}</div> : null}
+                  <label className="field mini-field">
+                    <span>Remark</span>
+                    <input
+                      value={linkRemarkDrafts[r.link_id] ?? ""}
+                      onChange={(e) => setLinkRemarkDrafts((d) => ({ ...d, [r.link_id]: e.target.value }))}
+                    />
+                  </label>
+                  <div className="relation-card-actions">
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => saveLinkRemark(r.link_id)}>
+                      Save
+                    </button>
+                    <button type="button" className="btn btn-danger-outline btn-sm" onClick={() => removeLink(r.link_id)}>
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))}
               {!followers.length ? <div className="empty-state">None</div> : null}
@@ -417,6 +544,45 @@ export default function CriminalDetailPage() {
             </button>
           </div>
         </section>
+      ) : null}
+
+      {photoPreview ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setPhotoPreview(null)}>
+          <div
+            className="modal-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Photo preview"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-sheet-header">
+              <h3>Photo preview &amp; analysis</h3>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPhotoPreview(null)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-preview-body">
+              <img className="modal-preview-img" src={resolveUploadUrl(photoPreview.image_url)} alt="" />
+              <label className="field full">
+                <span>Analysis notes</span>
+                <textarea
+                  rows={5}
+                  value={photoPreview.analysis_notes ?? ""}
+                  onChange={(e) => setPhotoPreview((p) => (p ? { ...p, analysis_notes: e.target.value } : null))}
+                  placeholder="Observations, face match notes, source of image, etc."
+                />
+              </label>
+              <div className="modal-preview-actions">
+                <button type="button" className="btn btn-primary" onClick={savePhotoAnalysis}>
+                  Save notes
+                </button>
+                <button type="button" className="btn btn-danger-outline" onClick={removePhoto}>
+                  Delete photo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

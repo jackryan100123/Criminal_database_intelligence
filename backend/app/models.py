@@ -82,4 +82,6 @@ class ProfilePhoto(Base):
     profile_id = Column(String(36), ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True)
     image_url = Column(String(1024), nullable=False)
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    # Analyst notes / observations for this image (preview & analysis workflow).
+    analysis_notes = Column(Text, nullable=True)
 

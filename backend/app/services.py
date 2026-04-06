@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,7 +11,6 @@ from app.schemas import (
     ProfileOut,
     RelationOut,
     SearchRequest,
-    SearchResponse,
 )
 
 
@@ -24,8 +22,6 @@ def index_profile_from_db(db: Session, store: ElasticsearchProfilesStore, profil
 
     supporter_ids: list[str] = []
     follower_ids: list[str] = []
-    supporter_ids = []
-    follower_ids = []
 
     if profile.kind == "criminal":
         links = db.execute(select(ProfileLink).where(ProfileLink.criminal_profile_id == profile_id)).scalars().all()
@@ -57,29 +53,104 @@ def index_profile_from_db(db: Session, store: ElasticsearchProfilesStore, profil
 def delete_profile_from_es(store: ElasticsearchProfilesStore, profile_id: str) -> None:
     store.delete_profile_doc(profile_id)
 
-def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
-    should: list[dict[str, Any]] = []
-    filters: list[dict[str, Any]] = []
 
-    if params.name:
-        should.append(
+def _has_es_terms(params: SearchRequest) -> bool:
+    return bool(
+        (params.q or "").strip()
+        or (params.name or "").strip()
+        or (params.fir_number or "").strip()
+        or (params.social_media or "").strip()
+        or (params.organization or "").strip()
+        or (params.details or "").strip()
+        or bool(params.info)
+    )
+
+
+def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
+    if not _has_es_terms(params):
+        # Relationship remark / active_status-only searches are handled in SQL after ES.
+        return {"match_none": {}}
+
+    filters: list[dict[str, Any]] = []
+    must: list[dict[str, Any]] = []
+    should: list[dict[str, Any]] = []
+
+    q_global = (params.q or "").strip()
+    if q_global:
+        must.append(
             {
-                "multi_match": {
-                    "query": params.name,
-                    "fields": ["name^4", "organization^2", "details", "remarks"],
-                    "type": "best_fields",
+                "bool": {
+                    "should": [
+                        {
+                            "multi_match": {
+                                "query": q_global,
+                                "fields": [
+                                    "name^4",
+                                    "organization^2",
+                                    "details",
+                                    "remarks",
+                                    "fir_number",
+                                    "social_media",
+                                ],
+                                "type": "best_fields",
+                                "fuzziness": "AUTO",
+                                "operator": "or",
+                            }
+                        },
+                        {
+                            "simple_query_string": {
+                                "query": q_global,
+                                "fields": ["info.*"],
+                                "default_operator": "or",
+                            }
+                        },
+                    ],
+                    "minimum_should_match": 1,
                 }
             }
         )
-    if params.organization:
-        should.append({"match": {"organization": {"query": params.organization}}})
-    if params.details:
-        should.append({"match": {"details": {"query": params.details}}})
+    else:
+        if params.name:
+            should.append(
+                {
+                    "multi_match": {
+                        "query": params.name,
+                        "fields": ["name^4", "organization^2", "details", "remarks"],
+                        "type": "best_fields",
+                        "fuzziness": "AUTO",
+                    }
+                }
+            )
+        if params.organization:
+            should.append({"match": {"organization": {"query": params.organization, "fuzziness": "AUTO"}}})
+        if params.details:
+            should.append({"match": {"details": {"query": params.details, "fuzziness": "AUTO"}}})
+
     if params.social_media:
-        # Social media is usually an exact field (URL); keep it in filters.
-        filters.append({"term": {"social_media": params.social_media}})
+        filters.append(
+            {
+                "bool": {
+                    "should": [
+                        {"term": {"social_media.keyword": params.social_media}},
+                        {"match": {"social_media": {"query": params.social_media, "fuzziness": "AUTO"}}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
     if params.fir_number:
-        filters.append({"term": {"fir_number": params.fir_number}})
+        fn = params.fir_number.strip()
+        filters.append(
+            {
+                "bool": {
+                    "should": [
+                        {"term": {"fir_number.keyword": fn}},
+                        {"match": {"fir_number": {"query": fn, "fuzziness": "AUTO"}}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
 
     # Search in universal analyst data
     if params.info:
@@ -87,7 +158,10 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
             if v is None:
                 continue
             if isinstance(v, str):
-                should.append({"match": {f"info.{k}": v}})
+                if q_global:
+                    must.append({"match": {f"info.{k}": {"query": v, "fuzziness": "AUTO"}}})
+                else:
+                    should.append({"match": {f"info.{k}": v}})
             else:
                 # For numbers/bools, term match is more appropriate.
                 filters.append({"term": {f"info.{k}": v}})
@@ -95,23 +169,28 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
     # Optional: search within relationship remark as well (only stored on SQL in Phase 1).
     # We keep ES query for profile remarks (general) and profile info; link_remark is handled in SQL.
 
-    # If user provides only filters, ES needs minimum_should_match to be omitted.
+    bool_body: dict[str, Any] = {"filter": filters}
+    if must:
+        bool_body["must"] = must
     if should:
-        return {"bool": {"filter": filters, "should": should, "minimum_should_match": 1}}
-    return {"bool": {"filter": filters}}
+        bool_body["should"] = should
+        bool_body["minimum_should_match"] = 1
+
+    return {"bool": bool_body}
 
 
 def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: SearchRequest):
-    # Return empty if caller didn't provide any meaningful search terms.
-    if not (
-        params.name
+    has_terms = bool(
+        (params.q and params.q.strip())
+        or params.name
         or params.fir_number
         or params.social_media
         or params.organization
         or params.details
         or params.info
         or params.link_remark
-    ):
+    )
+    if not has_terms:
         return ([], [])
 
     es_query = _build_es_global_query(params)
@@ -136,6 +215,18 @@ def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: Se
                 seen_criminals.add(cid)
         else:
             matched_user_ids.append(str(d["id"]))
+
+    if not criminal_matches_order and not _has_es_terms(params) and params.active_status is not None:
+        status_rows = db.execute(
+            select(Profile.id)
+            .where(Profile.kind == "criminal", Profile.active_status == params.active_status)
+            .order_by(Profile.created_at.desc())
+            .limit(oversample)
+        ).scalars().all()
+        for cid in status_rows:
+            if cid not in seen_criminals:
+                criminal_matches_order.append(cid)
+                seen_criminals.add(cid)
 
     role_filter = params.role
     info_role_filter = role_filter
@@ -230,6 +321,7 @@ def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: Se
             continue
         related_profiles.append(
             RelationOut(
+                link_id=link.id,
                 criminal_profile_id=link.criminal_profile_id,
                 linked_profile_id=linked_profile.id,
                 linked_kind=linked_profile.kind,
@@ -241,4 +333,3 @@ def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: Se
         )
 
     return (matched_profiles, related_profiles)
-

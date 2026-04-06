@@ -30,8 +30,9 @@ class ElasticsearchProfilesStore:
                     "details": {"type": "text"},
                     "active_status": {"type": "boolean"},
                     "remarks": {"type": "text"},
-                    "fir_number": {"type": "keyword"},
-                    "social_media": {"type": "keyword"},
+                    # Text + keyword for fuzzy / partial and exact filters.
+                    "fir_number": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
+                    "social_media": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 256}}},
                     "image_url": {"type": "keyword"},
                     "info": {"type": "flattened"},
                     "supporter_ids": {"type": "keyword"},

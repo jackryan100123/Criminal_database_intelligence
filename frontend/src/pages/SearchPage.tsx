@@ -34,6 +34,7 @@ export default function SearchPage() {
   const [result, setResult] = useState<any>(null);
 
   const [searchBase, setSearchBase] = useState({
+    q: "",
     name: "",
     fir_number: "",
     organization: "",
@@ -48,10 +49,37 @@ export default function SearchPage() {
 
   useEffect(() => {
     const st = (location.state as any)?.initialName;
-    if (typeof st === "string" && st) {
-      setSearchBase((p) => ({ ...p, name: st }));
+    const iq = (location.state as any)?.initialQuery;
+    if (typeof iq === "string" && iq.trim()) {
+      setSearchBase((p) => ({ ...p, q: iq.trim() }));
+    } else if (typeof st === "string" && st) {
+      setSearchBase((p) => ({ ...p, q: st.trim() }));
     }
   }, [location.state]);
+
+  useEffect(() => {
+    const iq = (location.state as any)?.initialQuery;
+    const legacy = (location.state as any)?.initialName;
+    const seed = typeof iq === "string" && iq.trim() ? iq.trim() : typeof legacy === "string" && legacy.trim() ? legacy.trim() : "";
+    if (!seed) return;
+    let cancelled = false;
+    (async () => {
+      setError("");
+      setLoading(true);
+      setResult(null);
+      try {
+        const res = await searchProfiles(cleanObject({ q: seed, size: 15 }));
+        if (!cancelled) setResult(res);
+      } catch (e: any) {
+        if (!cancelled) setError(e.message || "Search failed");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.key]);
 
   const runSearch = async () => {
     setError("");
@@ -60,6 +88,7 @@ export default function SearchPage() {
     try {
       const infoObj = infoRowsToObject(searchBase.info);
       const payload = cleanObject({
+        q: searchBase.q,
         name: searchBase.name,
         fir_number: searchBase.fir_number,
         organization: searchBase.organization,
@@ -84,7 +113,10 @@ export default function SearchPage() {
     <div className="page search-page">
       <div className="page-header">
         <h2>Search &amp; filter</h2>
-        <p className="page-lead">Full-text search across profiles, additional info fields, and relationship remarks.</p>
+        <p className="page-lead">
+          Global fuzzy search (<code>q</code>) across names, FIR, organization, details, remarks, social, and indexed info fields. Use filters to narrow
+          further.
+        </p>
       </div>
 
       <section className="panel">
@@ -100,8 +132,16 @@ export default function SearchPage() {
 
         <div className={`filters ${filtersOpen ? "" : "collapsed"}`}>
           <div className="row grid-2">
+            <label className="field full">
+              <span>Global query (fuzzy)</span>
+              <input
+                placeholder="Any word or partial FIR / name / org — not required to match the full record"
+                value={searchBase.q}
+                onChange={(e) => setSearchBase((p) => ({ ...p, q: e.target.value }))}
+              />
+            </label>
             <label className="field">
-              <span>Name / alias</span>
+              <span>Name / alias (narrowing)</span>
               <input value={searchBase.name} onChange={(e) => setSearchBase((p) => ({ ...p, name: e.target.value }))} />
             </label>
             <label className="field">
@@ -210,13 +250,24 @@ export default function SearchPage() {
               <span className="pill subtle">{result.related_profiles?.length ?? 0}</span>
             </div>
             <div className="card-list dense">
-              {(result.related_profiles ?? []).map((r: any, i: number) => (
-                <div key={i} className="mini-card">
+              {(result.related_profiles ?? []).map((r: any) => (
+                <div key={r.link_id} className="mini-card">
                   <div className="mini-title">
-                    {r.linked_name}{" "}
+                    {r.linked_kind === "criminal" ? (
+                      <button type="button" className="text-link" onClick={() => navigate(`/criminal/${r.linked_profile_id}`)}>
+                        {r.linked_name}
+                      </button>
+                    ) : (
+                      <span>{r.linked_name}</span>
+                    )}{" "}
                     <span className="pill subtle">{r.role}</span>
                   </div>
-                  <div className="mini-meta">→ criminal {r.criminal_profile_id}</div>
+                  <div className="mini-meta">
+                    Criminal:{" "}
+                    <button type="button" className="text-link" onClick={() => navigate(`/criminal/${r.criminal_profile_id}`)}>
+                      open profile
+                    </button>
+                  </div>
                   {r.remark ? <div className="mini-remark">{r.remark}</div> : null}
                 </div>
               ))}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -18,6 +19,7 @@ import { getAnalyticsNetwork, getDashboardStats, getTopCriminals } from "../api"
 const COLORS = ["#34d399", "#60a5fa", "#fbbf24", "#f87171", "#a78bfa", "#2dd4bf"];
 
 export default function AnalyticsPage() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<any>(null);
   const [top, setTop] = useState<any[]>([]);
   const [net, setNet] = useState<{ nodes: any[]; links: any[] } | null>(null);
@@ -90,8 +92,28 @@ export default function AnalyticsPage() {
                 <YAxis tick={{ fill: "var(--muted)" }} />
                 <Tooltip contentStyle={{ background: "var(--panel)", border: "1px solid var(--border)" }} />
                 <Legend />
-                <Bar dataKey="supporters" stackId="a" fill="#34d399" name="Supporters" />
-                <Bar dataKey="followers" stackId="a" fill="#60a5fa" name="Followers" />
+                <Bar
+                  dataKey="supporters"
+                  stackId="a"
+                  fill="#34d399"
+                  name="Supporters"
+                  cursor="pointer"
+                  onClick={(d: any) => {
+                    const id = d?.payload?.criminal_profile_id ?? d?.criminal_profile_id;
+                    if (id) navigate(`/criminal/${id}`);
+                  }}
+                />
+                <Bar
+                  dataKey="followers"
+                  stackId="a"
+                  fill="#60a5fa"
+                  name="Followers"
+                  cursor="pointer"
+                  onClick={(d: any) => {
+                    const id = d?.payload?.criminal_profile_id ?? d?.criminal_profile_id;
+                    if (id) navigate(`/criminal/${id}`);
+                  }}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -103,7 +125,14 @@ export default function AnalyticsPage() {
           <h3>Network graph</h3>
           <span className="pill subtle">Pan · zoom · drag nodes</span>
         </div>
-        {net ? <NetworkGraph nodes={net.nodes} links={net.links} height={520} /> : null}
+        {net ? (
+          <NetworkGraph
+            nodes={net.nodes}
+            links={net.links}
+            height={520}
+            onSelectCriminal={(id) => navigate(`/criminal/${id}`)}
+          />
+        ) : null}
       </section>
     </div>
   );

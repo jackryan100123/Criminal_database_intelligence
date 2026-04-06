@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 import time
+import shutil
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 from jose import JWTError
 from pydantic import BaseModel
@@ -24,10 +26,12 @@ from app.models import Base, Profile, ProfileLink, ProfilePhoto, TokenBlacklist,
 from app.schemas import (
     ImageUploadRequest,
     LinkRequest,
+    LinkUpdateRequest,
     LoginRequest,
     MessageResponse,
     ProfileCreate,
     ProfileOut,
+    ProfilePhotoUpdate,
     ProfileUpdate,
     RegisterRequest,
     SearchRequest,
@@ -46,6 +50,33 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 es_store = ElasticsearchProfilesStore()
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
+
+
+def _normalize_fir(s: Optional[str]) -> Optional[str]:
+    if not s:
+        return None
+    t = s.strip()
+    return t if t else None
+
+
+def _uploads_path_from_url(image_url: str) -> Path:
+    u = (image_url or "").strip()
+    if u.startswith("/uploads/"):
+        return UPLOAD_DIR / u[len("/uploads/") :].lstrip("/").replace("\\", "/")
+    if "uploads/" in u:
+        idx = u.index("uploads/")
+        return UPLOAD_DIR / u[idx + len("uploads/") :].lstrip("/").replace("\\", "/")
+    return UPLOAD_DIR / u.replace("\\", "/")
+
+
+def ensure_profile_photo_columns() -> None:
+    insp = sa_inspect(engine)
+    if not insp.has_table("profile_photos"):
+        return
+    cols = {c["name"] for c in insp.get_columns("profile_photos")}
+    if "analysis_notes" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE profile_photos ADD COLUMN analysis_notes TEXT"))
 
 
 def get_db() -> Session:
@@ -131,6 +162,7 @@ def startup() -> None:
     for _ in range(12):
         try:
             Base.metadata.create_all(bind=engine)
+            ensure_profile_photo_columns()
             break
         except Exception:
             time.sleep(2)
@@ -211,6 +243,23 @@ def create_profile(
 ) -> dict[str, Any]:
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=400, detail="name is required")
+
+    if body.kind == "criminal":
+        nf = _normalize_fir(body.fir_number)
+        if nf:
+            dup = db.execute(
+                select(Profile.id).where(
+                    Profile.kind == "criminal",
+                    Profile.fir_number.isnot(None),
+                    func.upper(func.trim(Profile.fir_number)) == nf.upper(),
+                )
+            ).scalars().first()
+            if dup:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A criminal profile with this FIR number already exists. Use search or edit the existing record.",
+                )
+
     profile = Profile(
         kind=body.kind,
         name=body.name,
@@ -242,6 +291,23 @@ def update_profile(
     profile = db.get(Profile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+
+    if profile.kind == "criminal" and body.fir_number is not None:
+        nf = _normalize_fir(body.fir_number)
+        if nf:
+            dup = db.execute(
+                select(Profile.id).where(
+                    Profile.kind == "criminal",
+                    Profile.id != profile_id,
+                    Profile.fir_number.isnot(None),
+                    func.upper(func.trim(Profile.fir_number)) == nf.upper(),
+                )
+            ).scalars().first()
+            if dup:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Another criminal profile already uses this FIR number.",
+                )
 
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -293,6 +359,8 @@ def delete_profile(
     profile = db.get(Profile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+
+    shutil.rmtree(UPLOAD_DIR / "profiles" / profile_id, ignore_errors=True)
 
     affected_criminal_ids: set[str] = set()
     if profile.kind == "criminal":
@@ -376,6 +444,7 @@ def get_followers(
         if linked:
             out.append(
                 RelationOut(
+                    link_id=link.id,
                     criminal_profile_id=criminal_profile_id,
                     linked_profile_id=linked.id,
                     linked_kind=linked.kind,
@@ -412,6 +481,7 @@ def get_supporters(
         if linked:
             out.append(
                 RelationOut(
+                    link_id=link.id,
                     criminal_profile_id=criminal_profile_id,
                     linked_profile_id=linked.id,
                     linked_kind=linked.kind,
@@ -425,8 +495,56 @@ def get_supporters(
     return {"supporters": out}
 
 
+@app.put("/profile/{criminal_profile_id}/links/{link_id}", response_model=MessageResponse)
+def update_profile_link(
+    criminal_profile_id: str,
+    link_id: str,
+    body: LinkUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageResponse:
+    criminal = db.get(Profile, criminal_profile_id)
+    if not criminal or criminal.kind != "criminal":
+        raise HTTPException(status_code=400, detail="criminal_profile_id must be a criminal profile")
+
+    link = db.get(ProfileLink, link_id)
+    if not link or link.criminal_profile_id != criminal_profile_id:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    if body.remark is not None:
+        link.remark = body.remark
+    db.add(link)
+    db.commit()
+
+    index_profile_from_db(db=db, store=es_store, profile_id=criminal_profile_id)
+    return MessageResponse(message="Relationship updated.")
+
+
+@app.delete("/profile/{criminal_profile_id}/links/{link_id}", response_model=MessageResponse)
+def delete_profile_link(
+    criminal_profile_id: str,
+    link_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageResponse:
+    criminal = db.get(Profile, criminal_profile_id)
+    if not criminal or criminal.kind != "criminal":
+        raise HTTPException(status_code=400, detail="criminal_profile_id must be a criminal profile")
+
+    link = db.get(ProfileLink, link_id)
+    if not link or link.criminal_profile_id != criminal_profile_id:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    db.delete(link)
+    db.commit()
+
+    index_profile_from_db(db=db, store=es_store, profile_id=criminal_profile_id)
+    return MessageResponse(message="Relationship removed.")
+
+
 @app.get("/search", response_model=SearchResponse)
 def search_get(
+    q: Optional[str] = Query(default=None),
     name: Optional[str] = Query(default=None),
     fir_number: Optional[str] = Query(default=None),
     social_media: Optional[str] = Query(default=None),
@@ -451,6 +569,7 @@ def search_get(
             raise HTTPException(status_code=400, detail="Invalid `info` JSON string")
 
     params = SearchRequest(
+        q=q,
         name=name,
         fir_number=fir_number,
         social_media=social_media,
@@ -506,6 +625,9 @@ async def upload_profile_photos(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
+    profile_dir = UPLOAD_DIR / "profiles" / profile_id
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
     saved = 0
     for f in files:
         if not f.filename:
@@ -515,12 +637,12 @@ async def upload_profile_photos(
             suffix = ".jpg"
 
         filename = f"{uuid.uuid4().hex}{suffix}"
-        dest_path = UPLOAD_DIR / filename
+        dest_path = profile_dir / filename
 
         content = await f.read()
         dest_path.write_bytes(content)
 
-        image_url = f"/uploads/{filename}"
+        image_url = f"/uploads/profiles/{profile_id}/{filename}"
         photo = ProfilePhoto(profile_id=profile_id, image_url=image_url)
         db.add(photo)
         saved += 1
@@ -542,10 +664,74 @@ def get_profile_photos(
 
     return {
         "photos": [
-            {"photo_id": p.id, "image_url": p.image_url, "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None}
+            {
+                "photo_id": p.id,
+                "image_url": p.image_url,
+                "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None,
+                "analysis_notes": p.analysis_notes,
+            }
             for p in photos
         ]
     }
+
+
+@app.patch("/profile/{profile_id}/photos/{photo_id}")
+def patch_profile_photo(
+    profile_id: str,
+    photo_id: str,
+    body: ProfilePhotoUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    profile = db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    photo = db.get(ProfilePhoto, photo_id)
+    if not photo or photo.profile_id != profile_id:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    updates = body.model_dump(exclude_unset=True)
+    if "analysis_notes" in updates:
+        photo.analysis_notes = updates["analysis_notes"]
+    db.add(photo)
+    db.commit()
+    db.refresh(photo)
+
+    return {
+        "photo_id": photo.id,
+        "image_url": photo.image_url,
+        "uploaded_at": photo.uploaded_at.isoformat() if photo.uploaded_at else None,
+        "analysis_notes": photo.analysis_notes,
+    }
+
+
+@app.delete("/profile/{profile_id}/photos/{photo_id}", response_model=MessageResponse)
+def delete_profile_photo(
+    profile_id: str,
+    photo_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageResponse:
+    profile = db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    photo = db.get(ProfilePhoto, photo_id)
+    if not photo or photo.profile_id != profile_id:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    path = _uploads_path_from_url(photo.image_url)
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        pass
+
+    db.delete(photo)
+    db.commit()
+
+    return MessageResponse(message="Photo deleted.")
 
 
 @app.get("/profiles")

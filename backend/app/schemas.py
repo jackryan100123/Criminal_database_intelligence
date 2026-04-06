@@ -84,6 +84,7 @@ class LinkRequest(BaseModel):
 
 
 class RelationOut(BaseModel):
+    link_id: str
     criminal_profile_id: str
     linked_profile_id: str
     linked_kind: ProfileKind
@@ -94,6 +95,8 @@ class RelationOut(BaseModel):
 
 
 class SearchRequest(BaseModel):
+    # Global fuzzy search across names, FIR, org, details, remarks, social, flattened info.*, etc.
+    q: Optional[str] = None
     name: Optional[str] = None
     fir_number: Optional[str] = None
     social_media: Optional[str] = None
@@ -107,6 +110,14 @@ class SearchRequest(BaseModel):
     info: Optional[dict[str, Any]] = None
 
     size: int = 10
+
+
+class LinkUpdateRequest(BaseModel):
+    remark: Optional[str] = None
+
+
+class ProfilePhotoUpdate(BaseModel):
+    analysis_notes: Optional[str] = None
 
 
 class SearchResponse(BaseModel):

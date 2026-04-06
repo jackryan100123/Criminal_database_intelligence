@@ -28,7 +28,7 @@ export default function DashboardPage() {
   }, []);
 
   const goSearch = () => {
-    navigate("/search", { state: { initialName: q } });
+    navigate("/search", { state: { initialQuery: q } });
   };
 
   return (
@@ -102,7 +102,19 @@ export default function DashboardPage() {
             <div key={i} className="activity-item">
               <div className={`activity-dot type-${ev.type}`} />
               <div className="activity-body">
-                <div className="activity-title">{ev.title}</div>
+                <div className="activity-title">
+                  {ev.profile_id || ev.criminal_profile_id ? (
+                    <button
+                      type="button"
+                      className="text-link activity-title-link"
+                      onClick={() => navigate(`/criminal/${ev.profile_id || ev.criminal_profile_id}`)}
+                    >
+                      {ev.title}
+                    </button>
+                  ) : (
+                    ev.title
+                  )}
+                </div>
                 <div className="activity-meta">{ev.subtitle}</div>
                 <div className="activity-time">{ev.at}</div>
               </div>
