@@ -54,6 +54,12 @@ def delete_profile_from_es(store: ElasticsearchProfilesStore, profile_id: str) -
     store.delete_profile_doc(profile_id)
 
 
+def _nonempty_str(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return bool(str(value).strip())
+
+
 def _has_es_terms(params: SearchRequest) -> bool:
     return bool(
         (params.q or "").strip()
@@ -94,14 +100,15 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
                                 ],
                                 "type": "best_fields",
                                 "fuzziness": "AUTO",
-                                "operator": "or",
                             }
                         },
+                        # Flattened `info` is a single field; `info.*` does not match mapping and yields no hits.
                         {
                             "simple_query_string": {
                                 "query": q_global,
-                                "fields": ["info.*"],
+                                "fields": ["info"],
                                 "default_operator": "or",
+                                "lenient": True,
                             }
                         },
                     ],
@@ -180,15 +187,17 @@ def _build_es_global_query(params: SearchRequest) -> dict[str, Any]:
 
 
 def search_and_expand(db: Session, store: ElasticsearchProfilesStore, params: SearchRequest):
+    # Must align with _has_es_terms + SQL-only filters (active status, link remark).
     has_terms = bool(
-        (params.q and params.q.strip())
-        or params.name
-        or params.fir_number
-        or params.social_media
-        or params.organization
-        or params.details
-        or params.info
-        or params.link_remark
+        _nonempty_str(params.q)
+        or _nonempty_str(params.name)
+        or _nonempty_str(params.fir_number)
+        or _nonempty_str(params.social_media)
+        or _nonempty_str(params.organization)
+        or _nonempty_str(params.details)
+        or bool(params.info)
+        or _nonempty_str(params.link_remark)
+        or params.active_status is not None
     )
     if not has_terms:
         return ([], [])

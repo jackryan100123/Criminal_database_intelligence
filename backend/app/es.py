@@ -42,7 +42,8 @@ class ElasticsearchProfilesStore:
             }
         }
 
-        self.client.indices.create(index=self.index, body=mapping)
+        # elasticsearch-py 8+: prefer explicit mappings (body= still works but this is clearer).
+        self.client.indices.create(index=self.index, mappings=mapping["mappings"])
 
     def index_profile_doc(self, profile_id: str, doc: dict[str, Any]) -> None:
         # Using id=profile_id keeps CRUD sync simple.
@@ -53,7 +54,10 @@ class ElasticsearchProfilesStore:
 
     def search_criminals(self, query: dict[str, Any], size: int) -> list[dict[str, Any]]:
         res = self.client.search(index=self.index, query=query, size=size)
-        hits = res.get("hits", {}).get("hits", [])
+        body = res.body if hasattr(res, "body") else res
+        if not isinstance(body, dict):
+            return []
+        hits = body.get("hits", {}).get("hits", [])
         return [h.get("_source", {}) for h in hits if h.get("_source")]
 
     def mget_profiles(self, ids: Iterable[str]) -> list[dict[str, Any]]:
@@ -61,9 +65,12 @@ class ElasticsearchProfilesStore:
         if not ids_list:
             return []
 
-        res = self.client.mget(index=self.index, body={"ids": ids_list})
+        res = self.client.mget(index=self.index, ids=ids_list)
+        body = res.body if hasattr(res, "body") else res
+        if not isinstance(body, dict):
+            return []
         docs: list[dict[str, Any]] = []
-        for doc in res.get("docs", []):
+        for doc in body.get("docs", []):
             if doc.get("found") and doc.get("_source"):
                 docs.append(doc["_source"])
         return docs
